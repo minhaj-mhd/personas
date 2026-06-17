@@ -1,0 +1,80 @@
+<div id="persona-card-{{ persona.id }}" class="glass-panel rounded-3xl p-6 flex flex-col justify-between h-80 glow-effect relative overflow-hidden group">
+    <!-- Top Decorative Gradient Line -->
+    <div class="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r {% if persona.is_builtin %}from-brand-500 to-purple-500{% else %}from-cyan-500 to-emerald-500{% endif %}"></div>
+    
+    <div class="space-y-4">
+        <!-- Card Header: Name & Badge -->
+        <div class="flex justify-between items-start">
+            <div>
+                <h3 class="font-outfit font-extrabold text-xl text-slate-100 group-hover:text-brand-400 transition-colors duration-200">
+                    {{ persona.name }}
+                </h3>
+                <span class="text-xs text-slate-400 font-mono block mt-0.5">{{ persona.voice or 'Default Voice' }}</span>
+            </div>
+            
+            {% if persona.is_builtin %}
+            <span class="text-[10px] font-mono font-bold tracking-wider px-2.5 py-1 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 uppercase">
+                System
+            </span>
+            {% else %}
+            <span class="text-[10px] font-mono font-bold tracking-wider px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 uppercase">
+                Custom
+            </span>
+            {% endif %}
+        </div>
+        
+        <!-- Description -->
+        <p class="text-sm text-slate-400 line-clamp-3 font-light leading-relaxed">
+            {{ persona.description or 'No description provided.' }}
+        </p>
+        
+        <!-- Traits -->
+        <div class="flex flex-wrap gap-1.5 pt-2">
+            {% if persona.personality_traits %}
+                {% if persona.personality_traits is string %}
+                    <span class="text-[11px] px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-400 font-mono">
+                        {{ persona.personality_traits }}
+                    </span>
+                {% else %}
+                    {% for trait in persona.personality_traits[:3] %}
+                    <span class="text-[11px] px-2.5 py-0.5 rounded-md bg-slate-900 border border-slate-800/80 text-slate-400 font-mono capitalize">
+                        {{ trait }}
+                    </span>
+                    {% endfor %}
+                    {% if persona.personality_traits|length > 3 %}
+                    <span class="text-[11px] px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800/80 text-slate-500 font-mono">
+                        +{{ persona.personality_traits|length - 3 }}
+                    </span>
+                    {% endif %}
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Action Buttons -->
+    <div class="flex items-center gap-3 pt-6 border-t border-slate-900/60 mt-auto">
+        <!-- Start Session -->
+        <a href="/chat/{{ persona.id }}" class="flex-1 px-4 py-2 rounded-xl bg-gradient-to-r {% if persona.is_builtin %}from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 shadow-brand-500/10{% else %}from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 shadow-cyan-500/10{% endif %} text-center text-xs font-semibold text-white shadow-lg transition-all duration-200 active:scale-[0.98]">
+            <i class="fa-solid fa-phone text-[10px] mr-1.5"></i> Talk
+        </a>
+        
+        {% if not persona.is_builtin %}
+        <!-- Edit -->
+        <a href="/personas/{{ persona.id }}/edit" class="p-2 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-850 hover:border-slate-700 text-slate-400 hover:text-slate-200 transition-all duration-200" title="Edit Persona">
+            <i class="fa-regular fa-pen-to-square text-xs"></i>
+        </a>
+        
+        <!-- Delete -->
+        <button 
+            hx-delete="/api/personas/{{ persona.id }}"
+            hx-confirm="Are you sure you want to delete '{{ persona.name }}'?"
+            hx-target="#persona-card-{{ persona.id }}"
+            hx-swap="outerHTML"
+            class="p-2 rounded-xl bg-slate-900/50 hover:bg-rose-950/20 border border-slate-850 hover:border-rose-900/40 text-slate-500 hover:text-rose-400 transition-all duration-200"
+            title="Delete Persona"
+        >
+            <i class="fa-regular fa-trash-can text-xs"></i>
+        </button>
+        {% endif %}
+    </div>
+</div>

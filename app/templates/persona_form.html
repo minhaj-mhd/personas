@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-8">
+    <!-- Back Link -->
+    <a href="/" class="text-slate-400 hover:text-brand-400 text-sm transition-colors flex items-center gap-2 mb-6">
+        <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+    </a>
+
+    <div class="glass-panel rounded-3xl p-8 space-y-6 shadow-xl">
+        <div class="border-b border-slate-900 pb-4">
+            <h1 class="font-outfit font-extrabold text-2xl tracking-tight text-slate-100">
+                {{ "Create Custom Persona" if action == "create" else "Edit Custom Persona" }}
+            </h1>
+            <p class="text-xs text-slate-400 mt-1">
+                Design a unique personality profile. The system will automatically build the agent's core prompt instruction.
+            </p>
+        </div>
+
+        <!-- Form -->
+        <form 
+            {% if action == "create" %}
+            hx-post="/api/personas"
+            {% else %}
+            hx-put="/api/personas/{{ persona.id }}"
+            {% endif %}
+            hx-ext="json-enc"
+            class="space-y-6"
+        >
+            <!-- Name -->
+            <div class="space-y-1.5">
+                <label for="name" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Name</label>
+                <input 
+                    type="text" 
+                    id="name" 
+                    name="name" 
+                    required 
+                    value="{{ persona.name if persona else '' }}" 
+                    placeholder="E.g., Socrates, Ada Lovelace, Dr. Watson"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors"
+                >
+            </div>
+
+            <!-- Description -->
+            <div class="space-y-1.5">
+                <label for="description" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Description (Bio / Role)</label>
+                <textarea 
+                    id="description" 
+                    name="description" 
+                    rows="2" 
+                    placeholder="E.g., A classical philosopher focused on dialectical reasoning and truth seeking."
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors resize-none"
+                >{{ persona.description if persona else '' }}</textarea>
+            </div>
+
+            <!-- Traits -->
+            <div class="space-y-1.5">
+                <label for="personality_traits" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Personality Traits</label>
+                <input 
+                    type="text" 
+                    id="personality_traits" 
+                    name="personality_traits" 
+                    value="{{ traits_str }}" 
+                    placeholder="E.g., inquisitive, patient, skeptical (comma separated)"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors"
+                >
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Speaking Style -->
+                <div class="space-y-1.5">
+                    <label for="speaking_style" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Speaking Style</label>
+                    <input 
+                        type="text" 
+                        id="speaking_style" 
+                        name="speaking_style" 
+                        value="{{ persona.speaking_style if persona else '' }}" 
+                        placeholder="E.g., inquisitive, concise, poetic"
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors"
+                    >
+                </div>
+
+                <!-- Voice -->
+                <div class="space-y-1.5">
+                    <label for="voice" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Voice ID / Provider Voice</label>
+                    <select 
+                        id="voice" 
+                        name="voice" 
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors"
+                    >
+                        <option value="en-US-Neural2-F" {% if persona and persona.voice == 'en-US-Neural2-F' %}selected{% endif %}>Female A (en-US-Neural2-F)</option>
+                        <option value="en-US-Neural2-C" {% if persona and persona.voice == 'en-US-Neural2-C' %}selected{% endif %}>Female B (en-US-Neural2-C)</option>
+                        <option value="en-US-Neural2-J" {% if persona and persona.voice == 'en-US-Neural2-J' %}selected{% endif %}>Male A (en-US-Neural2-J)</option>
+                        <option value="en-US-Neural2-B" {% if persona and persona.voice == 'en-US-Neural2-B' %}selected{% endif %}>Male B (en-US-Neural2-B)</option>
+                        <option value="en-GB-Neural2-D" {% if persona and persona.voice == 'en-GB-Neural2-D' %}selected{% endif %}>British Male (en-GB-Neural2-D)</option>
+                        <option value="en-AU-Neural2-B" {% if persona and persona.voice == 'en-AU-Neural2-B' %}selected{% endif %}>Australian Male (en-AU-Neural2-B)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Core Goals -->
+                <div class="space-y-1.5">
+                    <label for="goals" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Core Goals</label>
+                    <textarea 
+                        id="goals" 
+                        name="goals" 
+                        rows="3" 
+                        placeholder="E.g., Challenge the user's assumptions, encourage critical analysis, and teach logical structures."
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors resize-none"
+                    >{{ persona.goals if persona else '' }}</textarea>
+                </div>
+
+                <!-- Constraints -->
+                <div class="space-y-1.5">
+                    <label for="constraints" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Constraints / Safety Guards</label>
+                    <textarea 
+                        id="constraints" 
+                        name="constraints" 
+                        rows="3" 
+                        placeholder="E.g., Do not provide medical advice. Avoid giving definitive answers immediately; guide the user to them instead."
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors resize-none"
+                    >{{ persona.constraints if persona else '' }}</textarea>
+                </div>
+            </div>
+
+            <!-- Domain Expertise -->
+            <div class="space-y-1.5">
+                <label for="domain_expertise" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Domain Expertise</label>
+                <textarea 
+                    id="domain_expertise" 
+                    name="domain_expertise" 
+                    rows="2" 
+                    placeholder="E.g., Ancient Greek philosophy, ethics, epistemology, basic logic rules."
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors resize-none"
+                >{{ persona.domain_expertise if persona else '' }}</textarea>
+            </div>
+
+            <!-- Temperature Slider -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <label for="temperature" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Creativity (Temperature)</label>
+                    <span id="temp-val" class="text-xs font-mono text-slate-400">{{ persona.temperature if persona else '0.8' }}</span>
+                </div>
+                <input 
+                    type="range" 
+                    id="temperature" 
+                    name="temperature" 
+                    min="0.0" 
+                    max="1.5" 
+                    step="0.05"
+                    value="{{ persona.temperature if persona else '0.8' }}" 
+                    oninput="document.getElementById('temp-val').innerText = this.value"
+                    class="w-full accent-brand-500 bg-slate-900 h-1.5 rounded-lg appearance-none cursor-pointer"
+                >
+            </div>
+
+            <!-- Submit and Cancel Buttons -->
+            <div class="flex justify-end gap-4 pt-4 border-t border-slate-900/60">
+                <a href="/" class="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 text-sm font-semibold transition-all duration-200">
+                    Cancel
+                </a>
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white text-sm font-semibold shadow-lg shadow-brand-500/10 transition-all duration-200">
+                    {{ "Save & Create" if action == "create" else "Save Changes" }}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

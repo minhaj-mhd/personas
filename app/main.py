@@ -70,13 +70,9 @@ async def web_health_badge(db: AsyncSession = Depends(get_db)):
         </div>
         """
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """
-    Render home/dashboard page.
-    """
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={"title": "Home — Persona Platform"}
-    )
+# Import and include routers
+from app.api.personas import router as personas_api_router
+from app.web.views import router as web_views_router
+
+app.include_router(personas_api_router)
+app.include_router(web_views_router)

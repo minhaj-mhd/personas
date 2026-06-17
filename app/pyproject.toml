@@ -34,3 +34,7 @@ dev = [
 [tool.setuptools]
 package-dir = {"app" = "."}
 packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_default_test_loop_scope = "session"
+asyncio_mode = "auto"
