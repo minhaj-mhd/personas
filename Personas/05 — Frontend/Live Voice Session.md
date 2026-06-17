@@ -11,25 +11,16 @@ Full spec: **`VOICE_SESSION_PLAN.md`** at repo root →
 [VOICE_SESSION_PLAN.md](file:///c:/Users/loq/Desktop/learn/personas/VOICE_SESSION_PLAN.md).
 Searchable summary only — don't duplicate the spec body.
 
-## Grounding (real code, Phases 0–3 shipped)
-- Text chat already streams over **`/ws/chat/{id}`** ([voice_ws.py](file:///c:/Users/loq/Desktop/learn/personas/app/api/voice_ws.py)) with
-  cancellable generation, **interrupt** (persists partial + `[interrupted]`), and per-turn RAG/memory.
-- Client: [ws.js](file:///c:/Users/loq/Desktop/learn/personas/app/static/js/ws.js) + [chat.html](file:///c:/Users/loq/Desktop/learn/personas/app/templates/chat.html) — text form, interrupt button, Thinking/Streaming. **No mic/STT/TTS yet.**
-- `Persona.voice` column exists (unused) → per-persona TTS voice is schema-ready.
-
-## TL;DR
-- **Half-duplex streaming** (keep the turn loop). Live feel = streaming STT + streaming tokens + sentence-chunked TTS + barge-in.
-- **STT**: browser Web Speech (Chrome, MVP) → server Gemini STT (V4). **TTS**: browser `SpeechSynthesis` (MVP) → server streaming TTS (V3).
-- **Barge-in**: server `interrupt` already works; Phase 4 just adds the client mic trigger.
-- **Big point**: **V1–V2 need ZERO backend changes** — Web Speech fills `user_message`, `SpeechSynthesis` speaks the reply.
-
-## Sub-phases
-V1 mic + Web Speech + browser speech (push-to-talk) · V2 sentence-chunk + mic barge-in ·
-V3 server streaming TTS · V4 server STT · V5 Gemini Live full-duplex. **MVP = V1–V2 (client-only).**
-
-## Gotchas
-- `SpeechRecognition` = Chrome/Edge only → target Chrome for MVP.
-- Echo/false barge-in → headphones or **push-to-talk** default.
+## Grounding (Real Code, Phase 4 V1 Shipped)
+- **FastAPI Backend WebSocket Endpoint**: `/ws/chat/{id}` ([voice_ws.py](file:///c:/Users/loq/Desktop/learn/personas/app/api/voice_ws.py)) manages turn-based streaming, history retrieval, RAG injection, rolling summaries, and task cancellation (`interrupt` events that save partial replies with `[interrupted]`).
+- **Voice V1 Client Integration**:
+  - **Mic UI**: Added `#mic-btn` with Slate/Tailwind styling next to `#send-btn` in [chat.html](file:///c:/Users/loq/Desktop/learn/personas/app/templates/chat.html). Removed `required` input validation.
+  - **Push-to-Talk (PTT)**: Built triggers in [ws.js](file:///c:/Users/loq/Desktop/learn/personas/app/static/js/ws.js) supporting:
+    - **Mouse/Touch**: Holding down `#mic-btn` (starts `SpeechRecognition`), releasing or leaving stops it.
+    - **Keyboard**: Holding down `Spacebar` (when `#message-input` is unfocused) starts it, releasing stops it.
+  - **STT**: Uses browser-native Web Speech `SpeechRecognition`. Streams interim transcripts into the text box in real-time. Automatically fires a WebSocket `user_message` once speech finalizes.
+  - **TTS**: Employs browser-native `SpeechSynthesis` upon `message_complete`. Strips markdown format symbols (`*`, `_`, `` ` ``) and `[interrupted]` suffixes before speaking. Searches for high-quality system/Google English voices.
+  - **Barge-in / Speech Interruption**: Instantly calls `window.speechSynthesis.cancel()` if a new recording starts, if the user clicks `#interrupt-btn`, or if the server emits an `interrupted` event.
 
 ## Links
-- [[03 — Memory Layer/Memory Layer Overview]] · [[02 — Backend/Backend Overview]] · [[06 — Logs/Current Context]] (Phase 4 = next focus)
+- [[03 — Memory Layer/Memory Layer Overview]] · [[02 — Backend/Backend Overview]] · [[06 — Logs/Current Context]]
