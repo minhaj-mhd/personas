@@ -4,7 +4,6 @@ from sqlalchemy import select
 from app.db import async_session_maker
 from app.models.memory import Memory
 from app.services.embeddings import EmbeddingsService
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 

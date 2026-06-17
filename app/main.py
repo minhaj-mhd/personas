@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -59,8 +59,8 @@ async def web_health_badge(db: AsyncSession = Depends(get_db)):
             </div>
         </div>
         """
-    except Exception as e:
-        return f"""
+    except Exception:
+        return """
         <div class="flex items-center gap-3 bg-rose-500/10 border border-rose-500/20 px-4 py-3 rounded-xl text-rose-400 transition-all duration-300">
             <i class="fa-solid fa-circle-exclamation text-lg"></i>
             <div>
@@ -71,10 +71,10 @@ async def web_health_badge(db: AsyncSession = Depends(get_db)):
         """
 
 # Import and include routers
-from app.api.personas import router as personas_api_router
-from app.api.conversations import router as conversations_api_router
-from app.api.voice_ws import router as voice_ws_router
-from app.web.views import router as web_views_router
+from app.api.personas import router as personas_api_router  # noqa: E402
+from app.api.conversations import router as conversations_api_router  # noqa: E402
+from app.api.voice_ws import router as voice_ws_router  # noqa: E402
+from app.web.views import router as web_views_router  # noqa: E402
 
 app.include_router(personas_api_router)
 app.include_router(conversations_api_router)

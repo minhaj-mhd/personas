@@ -1,4 +1,3 @@
-import uuid
 import asyncio
 import pytest
 import pytest_asyncio
@@ -22,7 +21,7 @@ async def clean_database(session):
     try:
         await session.execute(delete(Message))
         await session.execute(delete(Conversation))
-        await session.execute(delete(Persona).where(Persona.is_builtin == False))
+        await session.execute(delete(Persona).where(not Persona.is_builtin))
         await session.commit()
     except Exception:
         await session.rollback()

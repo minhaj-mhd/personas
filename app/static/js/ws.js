@@ -18,9 +18,29 @@
     const sendBtn = document.getElementById("send-btn");
     const emptyState = document.getElementById("chat-empty-state");
 
+    const micBtn = document.getElementById("mic-btn");
+
     let ws = null;
     let currentAssistantBubble = null;
     let currentAssistantTextNode = null;
+
+    // SpeechRecognition Setup
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isRecording = false;
+
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+    } else {
+        console.warn("SpeechRecognition is not supported in this browser.");
+        if (micBtn) {
+            micBtn.classList.add("hidden");
+            micBtn.disabled = true;
+        }
+    }
 
     // Setup WebSocket connection
     function connect() {
@@ -192,6 +212,7 @@
             // Stream complete
             resetUIState();
             scrollToBottom();
+            speakText(data.text);
 
         } else if (data.type === "interrupted") {
             // Stream was interrupted
@@ -200,11 +221,11 @@
             }
             resetUIState();
             scrollToBottom();
+            window.speechSynthesis.cancel();
 
         } else if (data.type === "error") {
             console.error("Server error:", data.detail);
-            hideActionStatus();
-            enableChat();
+            resetUIState();
             
             // Append error bubble
             const flexWrapper = document.createElement("div");
@@ -237,32 +258,40 @@
         }
     }
 
+    // Send message helper
+    function sendMessage(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            console.error("Cannot send message. WebSocket is not open.");
+            return;
+        }
+
+        // Clear input & disable UI
+        if (messageInput) {
+            messageInput.value = "";
+        }
+        disableChat();
+        showActionStatus("thinking");
+
+        // Render user message instantly
+        appendUserBubble(trimmed);
+
+        // Send via WebSocket
+        ws.send(JSON.stringify({
+            type: "user_message",
+            text: trimmed
+        }));
+    }
+
     // Form submission handler
     if (chatForm) {
         chatForm.addEventListener("submit", (e) => {
             e.preventDefault();
-            
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                console.error("Cannot send message. WebSocket is not open.");
-                return;
+            if (messageInput) {
+                sendMessage(messageInput.value);
             }
-
-            const text = messageInput.value.trim();
-            if (!text) return;
-
-            // Clear input & disable UI
-            messageInput.value = "";
-            disableChat();
-            showActionStatus("thinking");
-
-            // Render user message instantly
-            appendUserBubble(text);
-
-            // Send via WebSocket
-            ws.send(JSON.stringify({
-                type: "user_message",
-                text: text
-            }));
         });
     }
 
@@ -275,7 +304,189 @@
                 }));
                 interruptBtn.disabled = true;
             }
+            window.speechSynthesis.cancel();
         });
+    }
+
+    // Push to Talk implementation
+    function startRecording() {
+        window.speechSynthesis.cancel();
+
+        // Trigger interrupt-btn click if active to cancel ongoing server generation
+        if (interruptBtn && !interruptBtn.classList.contains("hidden") && !interruptBtn.disabled) {
+            interruptBtn.click();
+        }
+
+        // Change button style: add bg-rose-600 text-white, remove bg-slate-900 text-slate-400
+        if (micBtn) {
+            micBtn.classList.remove("bg-slate-900", "text-slate-400");
+            micBtn.classList.add("bg-rose-600", "text-white");
+        }
+
+        if (messageInput) {
+            messageInput.placeholder = 'Listening...';
+            messageInput.value = '';
+        }
+
+        if (recognition && !isRecording) {
+            try {
+                recognition.start();
+                isRecording = true;
+            } catch (err) {
+                console.error("Failed to start SpeechRecognition:", err);
+            }
+        }
+    }
+
+    function stopRecording() {
+        // Reset button style
+        if (micBtn) {
+            micBtn.classList.remove("bg-rose-600", "text-white");
+            micBtn.classList.add("bg-slate-900", "text-slate-400");
+        }
+
+        if (messageInput) {
+            messageInput.placeholder = 'Type your message here...';
+        }
+
+        if (recognition && isRecording) {
+            try {
+                recognition.stop();
+            } catch (err) {
+                console.error("Failed to stop SpeechRecognition:", err);
+            }
+            isRecording = false;
+        }
+    }
+
+    // Speech Recognition Event Handlers
+    if (recognition) {
+        recognition.onresult = (event) => {
+            let fullTranscript = '';
+            for (let i = 0; i < event.results.length; i++) {
+                fullTranscript += event.results[i][0].transcript;
+            }
+            if (messageInput) {
+                messageInput.value = fullTranscript;
+            }
+        };
+
+        recognition.onend = () => {
+            isRecording = false;
+            // Reset style and placeholder in case of automatic stop
+            if (micBtn) {
+                micBtn.classList.remove("bg-rose-600", "text-white");
+                micBtn.classList.add("bg-slate-900", "text-slate-400");
+            }
+            if (messageInput) {
+                messageInput.placeholder = 'Type your message here...';
+                const text = messageInput.value.trim();
+                if (text) {
+                    sendMessage(text);
+                }
+            }
+        };
+
+        recognition.onerror = (event) => {
+            console.error("SpeechRecognition error:", event.error);
+            stopRecording();
+        };
+    }
+
+    // PTT Event Listeners on Mic Button
+    if (micBtn && recognition) {
+        micBtn.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            startRecording();
+        });
+
+        micBtn.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            startRecording();
+        });
+
+        micBtn.addEventListener("mouseup", (e) => {
+            if (isRecording) {
+                e.preventDefault();
+                stopRecording();
+            }
+        });
+
+        micBtn.addEventListener("mouseleave", (e) => {
+            if (isRecording) {
+                e.preventDefault();
+                stopRecording();
+            }
+        });
+
+        micBtn.addEventListener("touchend", (e) => {
+            if (isRecording) {
+                e.preventDefault();
+                stopRecording();
+            }
+        });
+    }
+
+    // Keyboard Event Listeners
+    document.addEventListener("keydown", (e) => {
+        if (e.code === "Space" || e.key === " ") {
+            if (document.activeElement !== messageInput) {
+                if (recognition && !isRecording) {
+                    e.preventDefault();
+                    startRecording();
+                }
+            }
+        }
+    });
+
+    document.addEventListener("keyup", (e) => {
+        if (e.code === "Space" || e.key === " ") {
+            if (isRecording) {
+                e.preventDefault();
+                stopRecording();
+            }
+        }
+    });
+
+    // Browser Speech Synthesis for TTS
+    function cleanTextForSpeech(text) {
+        if (!text) return "";
+        let cleaned = text.replace(/[*_`]/g, '');
+        cleaned = cleaned.replace(/\[interrupted\]/gi, '');
+        return cleaned.trim();
+    }
+
+    function speakText(text) {
+        window.speechSynthesis.cancel();
+
+        const cleanedText = cleanTextForSpeech(text);
+        if (!cleanedText) return;
+
+        const utterance = new SpeechSynthesisUtterance(cleanedText);
+
+        const voices = window.speechSynthesis.getVoices();
+        let selectedVoice = null;
+
+        function selectVoice(voiceList) {
+            let voice = voiceList.find(v => v.name.includes("Google") && (v.lang.startsWith("en-") || v.lang.startsWith("en_")));
+            if (!voice) {
+                voice = voiceList.find(v => v.lang.startsWith("en-") || v.lang.startsWith("en_"));
+            }
+            return voice;
+        }
+
+        selectedVoice = selectVoice(voices);
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
+
+        window.speechSynthesis.speak(utterance);
+    }
+
+    if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = () => {
+            window.speechSynthesis.getVoices();
+        };
     }
 
     // Start WebSocket connection

@@ -97,7 +97,7 @@ async def seed_builtins():
     """
     async with async_session_maker() as session:
         # Idempotent: delete all currently seeded builtins first
-        stmt = select(Persona).where(Persona.is_builtin == True)
+        stmt = select(Persona).where(Persona.is_builtin)
         result = await session.execute(stmt)
         existing = result.scalars().all()
         for p in existing:

@@ -1,5 +1,3 @@
-import uuid
-import asyncio
 import pytest
 import pytest_asyncio
 from unittest.mock import patch
@@ -10,8 +8,6 @@ from app.db import async_session_maker
 from app.main import app
 from app.models import Persona, Conversation, Message, Memory
 from app.services.memory import chunk_text, MemoryService
-from app.services.embeddings import EmbeddingsService
-from app.services.summarizer import SummarizerService
 from app.services.prompt_builder import inject_memories_into_prompt
 
 @pytest_asyncio.fixture
@@ -25,7 +21,7 @@ async def clean_database(session):
         await session.execute(delete(Memory))
         await session.execute(delete(Message))
         await session.execute(delete(Conversation))
-        await session.execute(delete(Persona).where(Persona.is_builtin == False))
+        await session.execute(delete(Persona).where(not Persona.is_builtin))
         await session.commit()
     except Exception:
         await session.rollback()

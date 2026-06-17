@@ -9,7 +9,7 @@ from sqlalchemy import delete
 os.environ["TESTING"] = "true"
 os.environ["GEMINI_API_KEY"] = "mock_key"
 
-from app.db import engine, async_session_maker
+from app.db import async_session_maker
 from app.models.persona import Persona
 
 # Set event loop policy at import time to prevent ProactorEventLoop issues on Windows
@@ -28,7 +28,7 @@ async def clean_database_before_tests():
     """
     async with async_session_maker() as session:
         try:
-            await session.execute(delete(Persona).where(Persona.is_builtin == False))
+            await session.execute(delete(Persona).where(not Persona.is_builtin))
             await session.commit()
             print("\nCleaned up legacy custom personas before starting tests.")
         except Exception as e:

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import Persona, Conversation, Message
+from app.models import Persona, Conversation, Message, Memory
 
 router = APIRouter(tags=["Web Views"])
 

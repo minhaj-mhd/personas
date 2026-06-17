@@ -74,7 +74,7 @@ class SummarizerService:
             for msg in unsummarized:
                 formatted_history += f"{msg.role}: {msg.content}\n"
 
-            prompt = f"You are a rolling conversation summarizer and fact extractor.\n"
+            prompt = "You are a rolling conversation summarizer and fact extractor.\n"
             if prev_summary:
                 prompt += f"PREVIOUS NARRATIVE SUMMARY:\n{prev_summary}\n\n"
             prompt += f"NEW UNCONSOLIDATED MESSAGES:\n{formatted_history}\n\n"
