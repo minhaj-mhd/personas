@@ -23,4 +23,4 @@ move finished items into the day's [[06 — Logs/Daily Logs/|Daily Log]].
 - [ ] Phase 4 — Voice.
 
 ## 🧵 Active Conversations
-- [[06 — Logs/Conversations/Conv-2026-06-17-Phase-1-Persona-CRUD|Phase 1 Persona CRUD (Concluded)]]
+- [[06 — Logs/Conversations/Conv-2026-06-17-Phase-2-Text-Chat-Loop|Phase 2 Text Chat Loop (Active)]]
