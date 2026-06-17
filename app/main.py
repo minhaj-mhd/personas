@@ -72,7 +72,11 @@ async def web_health_badge(db: AsyncSession = Depends(get_db)):
 
 # Import and include routers
 from app.api.personas import router as personas_api_router
+from app.api.conversations import router as conversations_api_router
+from app.api.voice_ws import router as voice_ws_router
 from app.web.views import router as web_views_router
 
 app.include_router(personas_api_router)
+app.include_router(conversations_api_router)
+app.include_router(voice_ws_router)
 app.include_router(web_views_router)

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models.persona import Persona
+from app.models import Persona, Conversation, Message
 
 router = APIRouter(tags=["Web Views"])
 
@@ -81,5 +81,74 @@ async def edit_persona_form(id: uuid.UUID, request: Request, db: AsyncSession = 
             "action": "edit",
             "persona": persona,
             "traits_str": traits_str
+        }
+    )
+
+@router.get("/personas/{id}", response_class=HTMLResponse)
+async def persona_detail(id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Renders the conversation sessions history for a specific persona.
+    """
+    stmt = select(Persona).where(Persona.id == id)
+    result = await db.execute(stmt)
+    persona = result.scalar_one_or_none()
+    if not persona:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Persona not found"
+        )
+
+    conv_stmt = select(Conversation).where(Conversation.persona_id == id).order_by(Conversation.updated_at.desc())
+    conv_result = await db.execute(conv_stmt)
+    conversations = conv_result.scalars().all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="conversations.html",
+        context={
+            "title": f"{persona.name} Sessions — Aura",
+            "persona": persona,
+            "conversations": conversations
+        }
+    )
+
+@router.get("/chat/{conversation_id}", response_class=HTMLResponse)
+async def chat_view(conversation_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Renders the active chat session page with history.
+    """
+    # Fetch conversation
+    conv_stmt = select(Conversation).where(Conversation.id == conversation_id)
+    conv_result = await db.execute(conv_stmt)
+    conversation = conv_result.scalar_one_or_none()
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation session not found"
+        )
+
+    # Fetch associated persona
+    persona_stmt = select(Persona).where(Persona.id == conversation.persona_id)
+    persona_result = await db.execute(persona_stmt)
+    persona = persona_result.scalar_one_or_none()
+    if not persona:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated persona not found"
+        )
+
+    # Fetch messages
+    msg_stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
+    msg_result = await db.execute(msg_stmt)
+    messages = msg_result.scalars().all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="chat.html",
+        context={
+            "title": f"Chat with {persona.name} — Aura",
+            "conversation": conversation,
+            "persona": persona,
+            "messages": messages
         }
     )

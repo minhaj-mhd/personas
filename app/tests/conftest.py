@@ -7,6 +7,7 @@ from sqlalchemy import delete
 
 # Configure environment for testing
 os.environ["TESTING"] = "true"
+os.environ["GEMINI_API_KEY"] = "mock_key"
 
 from app.db import engine, async_session_maker
 from app.models.persona import Persona

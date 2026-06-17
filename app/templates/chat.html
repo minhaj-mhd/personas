@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    /* Message scrolling area rules */
+    #messages-container {
+        height: 60vh;
+        overflow-y: auto;
+    }
+    
+    .chat-bubble {
+        max-width: 80%;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-4 flex-1 flex flex-col space-y-6">
+    <!-- Header with Back Link & Persona Card -->
+    <div class="flex items-center justify-between border-b border-slate-900 pb-4">
+        <div class="flex items-center gap-4">
+            <a href="/personas/{{ persona.id }}" class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-all duration-150">
+                <i class="fa-solid fa-arrow-left text-sm"></i>
+            </a>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="font-outfit font-extrabold text-xl text-slate-100">{{ persona.name }}</h1>
+                    <span id="connection-status" class="w-2.5 h-2.5 rounded-full bg-slate-600 animate-pulse" title="Connecting..."></span>
+                </div>
+                <p class="text-xs text-slate-400 font-mono tracking-wider truncate max-w-xs md:max-w-lg">
+                    Session: {{ conversation.title or 'Unnamed' }}
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <div id="action-status" class="hidden px-3 py-1 rounded-lg text-xs font-mono bg-slate-900 border border-slate-800 text-slate-400 flex items-center gap-2">
+                <i class="fa-solid fa-circle-notch animate-spin text-brand-400 text-[10px]"></i>
+                <span id="status-text">Thinking</span>
+            </div>
+            
+            <button 
+                id="interrupt-btn" 
+                disabled
+                class="hidden px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/25 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+                <i class="fa-solid fa-hand text-[10px]"></i> Interrupt
+            </button>
+        </div>
+    </div>
+
+    <!-- Messages Window -->
+    <div class="glass-panel rounded-3xl p-6 flex flex-col justify-between shadow-xl relative">
+        <div id="messages-container" class="space-y-4 pr-2 scroll-smooth">
+            <!-- Server-Side Pre-Rendered History -->
+            {% if messages %}
+                {% for msg in messages %}
+                    {% if msg.role == 'user' %}
+                        <!-- User Message -->
+                        <div class="flex justify-end">
+                            <div class="chat-bubble bg-brand-600 text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-md">
+                                <p class="text-sm font-light leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
+                                <span class="block text-[9px] text-brand-200 font-mono text-right mt-1.5">
+                                    {{ msg.created_at.strftime('%I:%M %p') }}
+                                </span>
+                            </div>
+                        </div>
+                    {% else %}
+                        <!-- Assistant Message -->
+                        <div class="flex justify-start">
+                            <div class="chat-bubble bg-slate-900 border border-slate-850 text-slate-100 rounded-2xl rounded-tl-none px-4 py-3 shadow-md">
+                                <p class="text-sm font-light leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
+                                <span class="block text-[9px] text-slate-500 font-mono mt-1.5">
+                                    {{ msg.created_at.strftime('%I:%M %p') }}
+                                </span>
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <!-- Empty State Prompt -->
+                <div id="chat-empty-state" class="h-full flex flex-col items-center justify-center space-y-4 py-20 text-center">
+                    <div class="w-14 h-14 rounded-full bg-slate-900 border border-slate-850 flex items-center justify-center">
+                        <i class="fa-regular fa-comments text-slate-500 text-xl"></i>
+                    </div>
+                    <div class="max-w-sm">
+                        <h3 class="font-outfit font-bold text-slate-300">Start the conversation</h3>
+                        <p class="text-slate-400 text-sm font-light mt-1">
+                            Type a message below to speak with {{ persona.name }}. They will remember your conversation details.
+                        </p>
+                    </div>
+                </div>
+            {% endif %}
+            
+            <!-- Live Streaming Bubble (Appended dynamically by ws.js) -->
+            <div id="live-streaming-anchor"></div>
+        </div>
+    </div>
+
+    <!-- Input Form -->
+    <form id="chat-form" class="flex gap-3 items-center">
+        <input 
+            type="text" 
+            id="message-input" 
+            placeholder="Type your message here..." 
+            autocomplete="off"
+            required
+            class="flex-1 bg-slate-900 border border-slate-800/80 rounded-2xl px-5 py-4 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors shadow-lg placeholder:text-slate-500"
+        >
+        <button 
+            type="submit" 
+            id="send-btn"
+            class="p-4 bg-gradient-to-r {% if persona.is_builtin %}from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 shadow-brand-500/10{% else %}from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 shadow-cyan-500/10{% endif %} rounded-2xl text-white shadow-lg transition-all duration-150 active:scale-[0.97]"
+        >
+            <i class="fa-solid fa-paper-plane text-sm"></i>
+        </button>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Pass config values from Jinja to window scope for ws.js
+    window.chatConfig = {
+        conversationId: "{{ conversation.id }}",
+        personaName: "{{ persona.name }}",
+        isBuiltin: {% if persona.is_builtin %}true{% else %}false{% endif %}
+    };
+</script>
+<!-- Client-side WebSocket integration code -->
+<script src="/static/js/ws.js"></script>
+{% endblock %}

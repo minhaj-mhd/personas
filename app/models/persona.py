@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import String, Boolean, Float, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 
 class Persona(Base):
@@ -32,3 +32,6 @@ class Persona(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
     )
+
+    # Relationships
+    conversations = relationship("Conversation", back_populates="persona", cascade="all, delete-orphan")

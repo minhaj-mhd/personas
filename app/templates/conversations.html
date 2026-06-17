@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8 space-y-8">
+    <!-- Back Link -->
+    <a href="/" class="text-slate-400 hover:text-brand-400 text-sm transition-colors flex items-center gap-2 mb-2">
+        <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+    </a>
+
+    <!-- Persona Header Card -->
+    <div class="glass-panel rounded-3xl p-8 relative overflow-hidden flex flex-col md:flex-row gap-6 justify-between items-start md:items-center">
+        <!-- Top Decorative Gradient Line -->
+        <div class="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r {% if persona.is_builtin %}from-brand-500 to-purple-500{% else %}from-cyan-500 to-emerald-500{% endif %}"></div>
+        
+        <div class="space-y-3 max-w-2xl">
+            <div class="flex items-center gap-3 flex-wrap">
+                <h1 class="font-outfit font-extrabold text-3xl text-slate-100">
+                    {{ persona.name }}
+                </h1>
+                {% if persona.is_builtin %}
+                <span class="text-[10px] font-mono font-bold tracking-wider px-2.5 py-1 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 uppercase">
+                    System Persona
+                </span>
+                {% else %}
+                <span class="text-[10px] font-mono font-bold tracking-wider px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 uppercase">
+                    Custom Persona
+                </span>
+                {% endif %}
+            </div>
+            
+            <p class="text-slate-400 font-light leading-relaxed">
+                {{ persona.description or 'No description provided.' }}
+            </p>
+
+            <div class="flex flex-wrap gap-2 pt-1.5 text-xs text-slate-400 font-mono">
+                <span class="px-2.5 py-1 bg-slate-900/60 rounded-lg border border-slate-850">
+                    Voice: {{ persona.voice or 'Default' }}
+                </span>
+                <span class="px-2.5 py-1 bg-slate-900/60 rounded-lg border border-slate-850">
+                    Temp: {{ persona.temperature }}
+                </span>
+                {% if persona.speaking_style %}
+                <span class="px-2.5 py-1 bg-slate-900/60 rounded-lg border border-slate-850 capitalize">
+                    Style: {{ persona.speaking_style }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Start New Session Button -->
+        <button 
+            hx-post="/api/conversations" 
+            hx-vals='{"persona_id": "{{ persona.id }}"}'
+            hx-ext="json-enc"
+            hx-swap="none"
+            class="w-full md:w-auto px-6 py-3.5 bg-gradient-to-r {% if persona.is_builtin %}from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 shadow-brand-500/15{% else %}from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 shadow-cyan-500/15{% endif %} text-sm font-semibold rounded-xl text-white shadow-lg transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2"
+        >
+            <i class="fa-solid fa-plus text-xs"></i> Start New Session
+        </button>
+    </div>
+
+    <!-- Conversations History List -->
+    <div class="space-y-4">
+        <h2 class="font-outfit font-bold text-slate-300 uppercase text-xs tracking-widest border-l-2 border-slate-700 pl-3">
+            Conversation History
+        </h2>
+
+        {% if conversations %}
+        <div class="glass-panel rounded-3xl overflow-hidden border border-slate-800/60 divide-y divide-slate-900/80">
+            {% for conv in conversations %}
+            <div id="conversation-row-{{ conv.id }}" class="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-slate-900/20 transition-colors duration-150">
+                <div class="space-y-1.5">
+                    <h3 class="font-outfit font-bold text-lg text-slate-200">
+                        {{ conv.title or 'Unnamed Session' }}
+                    </h3>
+                    <p class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                        <i class="fa-regular fa-clock text-[10px]"></i>
+                        Last active: <span class="capitalize">{{ conv.updated_at.strftime('%b %d, %Y, %I:%M %p') }}</span>
+                    </p>
+                </div>
+                
+                <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <!-- Resume Button -->
+                    <a href="/chat/{{ conv.id }}" class="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-200 text-xs font-semibold rounded-xl transition-all duration-150 hover:border-slate-700 flex items-center justify-center gap-1.5">
+                        <i class="fa-regular fa-comments text-xs"></i> Resume Chat
+                    </a>
+                    
+                    <!-- Delete Button -->
+                    <button 
+                        hx-delete="/api/conversations/{{ conv.id }}"
+                        hx-confirm="Are you sure you want to delete this session? This will wipe all messages."
+                        hx-target="#conversation-row-{{ conv.id }}"
+                        hx-swap="outerHTML"
+                        class="p-2.5 rounded-xl bg-slate-900/40 hover:bg-rose-950/20 border border-slate-900 hover:border-rose-900/40 text-slate-500 hover:text-rose-400 transition-all duration-150"
+                        title="Delete Session"
+                    >
+                        <i class="fa-regular fa-trash-can text-xs"></i>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <!-- History Placeholder -->
+        <div class="glass-panel rounded-3xl p-10 text-center space-y-4 border-dashed border-2 border-slate-850/80">
+            <div class="w-12 h-12 mx-auto rounded-full bg-slate-900 border border-slate-850 flex items-center justify-center">
+                <i class="fa-regular fa-message text-slate-500 text-lg"></i>
+            </div>
+            <div class="max-w-md mx-auto space-y-1">
+                <h3 class="font-outfit font-bold text-slate-300">No Sessions Found</h3>
+                <p class="text-slate-400 text-sm font-light">
+                    You haven't had any conversations with {{ persona.name }} yet. Click "Start New Session" above to begin.
+                </p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
