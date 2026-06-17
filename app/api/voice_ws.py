@@ -12,6 +12,9 @@ from app.models.persona import Persona
 from app.services.gemini import GeminiService
 from google.genai import types
 from app.config import settings
+from app.services.memory import MemoryService
+from app.services.prompt_builder import inject_memories_into_prompt
+from app.services.summarizer import SummarizerService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["WebSocket Chat"])
@@ -76,6 +79,15 @@ async def chat_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                 history_res = await session.execute(history_stmt)
                 history_msgs = list(reversed(history_res.scalars().all()))
 
+            # Retrieve RAG context (narrative summaries and semantic document chunks)
+            memory_service = MemoryService()
+            retrieved_memories = await memory_service.retrieve_context(
+                persona_id=persona.id,
+                conversation_id=conversation_id,
+                user_text=user_text
+            )
+            injected_prompt = inject_memories_into_prompt(system_prompt, retrieved_memories)
+
             # Map messages to google-genai Content format
             gemini_history = []
             for msg in history_msgs:
@@ -89,7 +101,7 @@ async def chat_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
 
             # 3. Request and stream response from Gemini service
             generator = gemini_service.generate_chat_stream(
-                system_instruction=system_prompt,
+                system_instruction=injected_prompt,
                 chat_history=gemini_history,
                 user_message=user_text,
                 temperature=temperature
@@ -119,6 +131,10 @@ async def chat_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                 "message_id": str(assistant_msg_id),
                 "text": full_reply
             })
+
+            # 6. Trigger rolling summarization asynchronously
+            summarizer_service = SummarizerService()
+            asyncio.create_task(summarizer_service.maybe_summarize(conversation_id))
 
         except asyncio.CancelledError:
             logger.info("Generation task was cancelled.")

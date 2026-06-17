@@ -1,13 +1,15 @@
 import uuid
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from typing import List, Optional
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models.persona import Persona
+from app.models import Persona, Memory
 from app.schemas.personas import PersonaCreate, PersonaUpdate, PersonaResponse
 from app.services.prompt_builder import assemble_system_prompt
+from app.services.memory import MemoryService
 
 router = APIRouter(prefix="/api/personas", tags=["Personas"])
 
@@ -131,5 +133,73 @@ async def delete_persona(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         )
 
     await db.delete(persona)
+    await db.commit()
+    return
+
+@router.post("/{id}/documents", status_code=status.HTTP_201_CREATED)
+async def upload_persona_document(
+    id: uuid.UUID,
+    file: Optional[UploadFile] = File(None),
+    raw_text: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Upload a plain text or markdown file or paste raw text to ingest as RAG memory chunks for a persona.
+    """
+    # Verify persona exists
+    persona_stmt = select(Persona).where(Persona.id == id)
+    persona_res = await db.execute(persona_stmt)
+    if not persona_res.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Persona not found"
+        )
+
+    content = ""
+    filename = ""
+    if file:
+        content_bytes = await file.read()
+        content = content_bytes.decode("utf-8")
+        filename = file.filename
+    elif raw_text:
+        content = raw_text
+        now = datetime.now()
+        filename = f"Pasted Text — {now.strftime('%b %d, %Y, %I:%M %p')}"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide either a file upload or raw_text Form parameter."
+        )
+
+    memory_service = MemoryService()
+    await memory_service.ingest_document(persona_id=id, filename=filename, text=content)
+    
+    return {"status": "success", "filename": filename}
+
+@router.get("/{id}/documents", response_model=List[str])
+async def list_persona_documents(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """
+    Lists unique filenames of uploaded documents in the knowledge base of a persona.
+    """
+    stmt = (
+        select(Memory.metadata_)
+        .where(Memory.persona_id == id)
+        .where(Memory.memory_type == "document")
+    )
+    res = await db.execute(stmt)
+    metadata_list = res.scalars().all()
+    sources = set()
+    for meta in metadata_list:
+        if meta and "source" in meta:
+            sources.add(meta["source"])
+    return sorted(list(sources))
+
+@router.delete("/{id}/documents", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_persona_documents(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """
+    Wipes all document chunks associated with a persona.
+    """
+    stmt = delete(Memory).where(Memory.persona_id == id).where(Memory.memory_type == "document")
+    await db.execute(stmt)
     await db.commit()
     return

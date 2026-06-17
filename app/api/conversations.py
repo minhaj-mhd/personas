@@ -10,6 +10,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.persona import Persona
 from app.schemas.conversations import ConversationCreate, ConversationResponse, MessageResponse
+from app.services.summarizer import SummarizerService
 
 router = APIRouter(prefix="/api/conversations", tags=["Conversations"])
 
@@ -107,3 +108,20 @@ async def delete_conversation(id: uuid.UUID, db: AsyncSession = Depends(get_db))
     await db.delete(conversation)
     await db.commit()
     return
+
+@router.post("/{id}/summarize", status_code=status.HTTP_200_OK)
+async def trigger_conversation_summary(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """
+    Manually triggers rolling summarization for the conversation (ignores threshold check).
+    """
+    stmt = select(Conversation).where(Conversation.id == id)
+    res = await db.execute(stmt)
+    if not res.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+
+    summarizer_service = SummarizerService()
+    await summarizer_service.maybe_summarize(conversation_id=id, force=True)
+    return {"status": "success", "detail": "Summarization triggered successfully."}

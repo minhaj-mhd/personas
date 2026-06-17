@@ -27,6 +27,19 @@ async def clean_database(session):
     except Exception:
         await session.rollback()
 
+class MockEmbeddingValues:
+    def __init__(self):
+        self.values = [0.01] * 768
+
+class MockEmbeddingsResponse:
+    def __init__(self, count=1):
+        self.embeddings = [MockEmbeddingValues() for _ in range(count)]
+
+async def mock_embed_content(self, model, contents, config=None):
+    if isinstance(contents, list):
+        return MockEmbeddingsResponse(len(contents))
+    return MockEmbeddingsResponse(1)
+
 class MockWebSocket:
     def __init__(self):
         self.sent_messages = []
@@ -42,7 +55,7 @@ class MockWebSocket:
 
     async def receive_json(self):
         if self.receive_queue.empty():
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(2.0)
             raise WebSocketDisconnect()
         return await self.receive_queue.get()
 
@@ -128,46 +141,45 @@ async def test_websocket_chat_streaming(db_session):
             yield " "
             yield "more"
 
-        # Use patch to mock GeminiService.generate_chat_stream
-        with patch.object(GeminiService, "generate_chat_stream", mock_generate_chat_stream):
-            # Setup WebSocket
-            mock_ws = MockWebSocket()
-            
-            # Push a user message to receive queue
-            await mock_ws.receive_queue.put({
-                "type": "user_message",
-                "text": "Why is sky blue?"
-            })
+        # Use patch to mock AsyncModels.embed_content and GeminiService.generate_chat_stream
+        with patch("google.genai.models.AsyncModels.embed_content", mock_embed_content):
+            with patch.object(GeminiService, "generate_chat_stream", mock_generate_chat_stream):
+                # Setup WebSocket
+                mock_ws = MockWebSocket()
+                
+                # Push a user message to receive queue
+                await mock_ws.receive_queue.put({
+                    "type": "user_message",
+                    "text": "Why is sky blue?"
+                })
 
-            # Call the websocket handler
-            await chat_websocket(mock_ws, conv.id)
+                # Call the websocket handler
+                await chat_websocket(mock_ws, conv.id)
 
-            # Assertions on connection and messages sent to client
-            assert mock_ws.accepted is True
-            
-            tokens = [msg["delta"] for msg in mock_ws.sent_messages if msg.get("type") == "token"]
-            assert tokens == ["Argue", " ", "more"]
+                # Assertions on connection and messages sent to client
+                assert mock_ws.accepted is True
+                tokens = [msg["delta"] for msg in mock_ws.sent_messages if msg.get("type") == "token"]
+                assert tokens == ["Argue", " ", "more"]
+                completes = [msg for msg in mock_ws.sent_messages if msg.get("type") == "message_complete"]
+                assert len(completes) == 1
+                assert completes[0]["text"] == "Argue more"
 
-            completes = [msg for msg in mock_ws.sent_messages if msg.get("type") == "message_complete"]
-            assert len(completes) == 1
-            assert completes[0]["text"] == "Argue more"
+                # Check database records
+                from sqlalchemy import select
+                stmt = select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at.asc())
+                res = await db_session.execute(stmt)
+                messages = res.scalars().all()
+                assert len(messages) == 2
+                assert messages[0].role == "user"
+                assert messages[0].content == "Why is sky blue?"
+                assert messages[1].role == "assistant"
+                assert messages[1].content == "Argue more"
 
-            # Check database records
-            from sqlalchemy import select
-            stmt = select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at.asc())
-            res = await db_session.execute(stmt)
-            messages = res.scalars().all()
-            assert len(messages) == 2
-            assert messages[0].role == "user"
-            assert messages[0].content == "Why is sky blue?"
-            assert messages[1].role == "assistant"
-            assert messages[1].content == "Argue more"
-
-            # Verify Gemini was invoked with correct parameters
-            assert len(captured_calls) == 1
-            assert captured_calls[0]["system_instruction"] == "You love arguments."
-            assert captured_calls[0]["user_message"] == "Why is sky blue?"
-            assert captured_calls[0]["temperature"] == 0.9
+                # Verify Gemini was invoked with correct parameters
+                assert len(captured_calls) == 1
+                assert "You love arguments." in captured_calls[0]["system_instruction"]
+                assert captured_calls[0]["user_message"] == "Why is sky blue?"
+                assert captured_calls[0]["temperature"] == 0.9
 
     finally:
         await clean_database(db_session)

@@ -102,13 +102,24 @@ async def persona_detail(id: uuid.UUID, request: Request, db: AsyncSession = Dep
     conv_result = await db.execute(conv_stmt)
     conversations = conv_result.scalars().all()
 
+    # Fetch unique uploaded RAG documents for this persona
+    stmt_docs = select(Memory.metadata_).where(Memory.persona_id == id).where(Memory.memory_type == "document")
+    res_docs = await db.execute(stmt_docs)
+    metadata_list = res_docs.scalars().all()
+    sources = set()
+    for meta in metadata_list:
+        if meta and "source" in meta:
+            sources.add(meta["source"])
+    documents = sorted(list(sources))
+
     return templates.TemplateResponse(
         request=request,
         name="conversations.html",
         context={
             "title": f"{persona.name} Sessions — Aura",
             "persona": persona,
-            "conversations": conversations
+            "conversations": conversations,
+            "documents": documents
         }
     )
 

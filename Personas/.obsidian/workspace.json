@@ -13,28 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "01 — Architecture/Architecture Overview.md",
+                "file": "03 — Memory Layer/How RAG and Persistent Memory Work.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Architecture Overview"
-            }
-          }
-        ]
-      },
-      {
-        "id": "384fbba1a48b183f",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "62d545bcbbf8ec13",
-            "type": "leaf",
-            "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "title": "How RAG and Persistent Memory Work"
             }
           }
         ]
@@ -201,21 +185,27 @@
   },
   "active": "e065ab2b971b7310",
   "lastOpenFiles": [
+    "01 — Architecture/Database Schema and Migrations.md",
+    "01 — Architecture/System Walkthrough.md",
+    "01 — Architecture/Architecture Overview.md",
+    "06 — Logs/Conversations/Conv-2026-06-17-Documentation-Expansion.md",
+    "03 — Memory Layer/How RAG and Persistent Memory Work.md",
+    "06 — Logs/Conversations/Conv-2026-06-17-Phase-3-Memory-Layer.md",
+    "05 — Frontend/Frontend Overview.md",
+    "06 — Logs/Conversations/README.md",
+    "06 — Logs/Daily Logs/2026-06-17.md",
+    "06 — Logs/Daily Logs/README.md",
+    "06 — Logs/Current Context.md",
     "AI Operating Protocol.md",
     "06 — Logs/Conversations/Conv-2026-06-17-Git-Init-Scaffolding.md",
     "03 — Memory Layer/Memory Layer Overview.md.tmp.24728.baab7dd718b7",
     "09 — Archive/Archive Index.md",
-    "06 — Logs/Conversations/README.md",
-    "05 — Frontend/Frontend Overview.md",
     "04 — Personas/Persona Catalog.md",
     "03 — Memory Layer/Memory Layer Overview.md",
     "02 — Backend/Backend Overview.md",
-    "01 — Architecture/Architecture Overview.md",
     "Welcome.md",
-    "06 — Logs/Current Context.md",
     "09 — Archive/Archive Index.md.tmp.24728.ba1771617afc",
     "09 — Archive",
-    "06 — Logs/Daily Logs/README.md",
     "06 — Logs/Daily Logs",
     "06 — Logs/Conversations",
     "06 — Logs",

@@ -34,3 +34,33 @@ def assemble_system_prompt(
         "(1-4 sentences unless asked to elaborate), since the user is talking, not reading."
     )
     return prompt
+
+def inject_memories_into_prompt(base_prompt: str, memories: list) -> str:
+    """
+    Injects narrative summaries and retrieved semantic facts/documents into the base prompt.
+    """
+    if not memories:
+        return base_prompt
+
+    summaries = []
+    facts_and_docs = []
+
+    for mem in memories:
+        if mem.memory_type == "summary":
+            summaries.append(mem.content)
+        else:
+            prefix = ""
+            if mem.memory_type == "document" and mem.metadata_ and "source" in mem.metadata_:
+                prefix = f"[{mem.metadata_['source']}]: "
+            facts_and_docs.append(f"- {prefix}{mem.content}")
+
+    injected = base_prompt + "\n\n### LONG-TERM MEMORY & CONTEXT\n"
+    
+    if summaries:
+        injected += f"Narrative Summary of Past Conversations:\n{summaries[0]}\n\n"
+        
+    if facts_and_docs:
+        injected += "Extracted Facts & Uploaded Reference Materials:\n"
+        injected += "\n".join(facts_and_docs) + "\n"
+
+    return injected.strip()
