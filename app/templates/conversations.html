@@ -191,11 +191,21 @@
         </div>
     </div>
 
-    <!-- Client Script to reload page on successful upload or clear -->
+    <!-- Client Script to reload page on successful upload/clear, and redirect on session creation -->
     <script>
         document.body.addEventListener('htmx:afterRequest', function(evt) {
             if (evt.detail.pathInfo.requestPath.includes('/documents') && evt.detail.successful) {
                 window.location.reload();
+            }
+            if (evt.detail.pathInfo.requestPath === '/api/conversations' && evt.detail.successful) {
+                try {
+                    const response = JSON.parse(evt.detail.xhr.responseText);
+                    if (response && response.id) {
+                        window.location.href = "/chat/" + response.id;
+                    }
+                } catch (e) {
+                    console.error("Failed to parse conversation creation response:", e);
+                }
             }
         });
     </script>
