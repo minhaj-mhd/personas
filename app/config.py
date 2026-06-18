@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     CHAT_MODEL: str = "gemini-2.5-flash"
     SUMMARY_MODEL: str = "gemini-2.5-pro"
 
+    # Live voice (full-duplex) configuration — Voice L1
+    # Override LIVE_MODEL via .env to point at whichever Live model you have access to
+    # (e.g. a Gemini 3 Flash Live model). Must be a half-cascade/native-audio Live model.
+    LIVE_MODEL: str = "gemini-live-2.5-flash-preview"
+    LIVE_VOICE: str = "Puck"  # default prebuilt voice when persona.voice is unset/invalid
+    LIVE_ENABLE_SEARCH: bool = False  # also expose Google Search grounding in the live session
+    LIVE_INPUT_SAMPLE_RATE: int = 16000   # PCM16 mono the client must stream up
+    LIVE_OUTPUT_SAMPLE_RATE: int = 24000  # PCM16 mono the model streams back
+
     # Memory configuration
     SHORT_TERM_MESSAGES: int = 12
     SUMMARIZE_THRESHOLD: int = 10

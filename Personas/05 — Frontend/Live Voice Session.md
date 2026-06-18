@@ -9,7 +9,12 @@ updated: 2026-06-17
 
 Full spec: **`VOICE_SESSION_PLAN.md`** at repo root →
 [VOICE_SESSION_PLAN.md](file:///c:/Users/loq/Desktop/learn/personas/VOICE_SESSION_PLAN.md).
+In-depth per-step breakdown + **Live-first replan (2026-06-18)**: [[05 — Frontend/Voice Session Roadmap — V1 to V5]].
 Searchable summary only — don't duplicate the spec body.
+
+> **🔄 Replanned Live-first:** V1 (below) stays as fallback; V2/V3/V4 deprecated (superseded by Gemini
+> Live native audio/VAD/interruption + free unlimited access). Next: **L1 — Live single-agent
+> free-talk**, then **L2 — multi-agent voice panel (Live + LangGraph)**.
 
 ## Grounding (Real Code, Phase 4 V1 Shipped)
 - **FastAPI Backend WebSocket Endpoint**: `/ws/chat/{id}` ([voice_ws.py](file:///c:/Users/loq/Desktop/learn/personas/app/api/voice_ws.py)) manages turn-based streaming, history retrieval, RAG injection, rolling summaries, and task cancellation (`interrupt` events that save partial replies with `[interrupted]`).
@@ -23,4 +28,4 @@ Searchable summary only — don't duplicate the spec body.
   - **Barge-in / Speech Interruption**: Instantly calls `window.speechSynthesis.cancel()` if a new recording starts, if the user clicks `#interrupt-btn`, or if the server emits an `interrupted` event.
 
 ## Links
-- [[03 — Memory Layer/Memory Layer Overview]] · [[02 — Backend/Backend Overview]] · [[06 — Logs/Current Context]]
+- [[05 — Frontend/Voice Session Roadmap — V1 to V5]] · [[03 — Memory Layer/Memory Layer Overview]] · [[02 — Backend/Backend Overview]] · [[06 — Logs/Current Context]]

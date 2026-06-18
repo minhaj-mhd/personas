@@ -1,5 +1,12 @@
 # Live Voice Session — Phase 4 Implementation Plan
 
+> **🔄 SUPERSEDED ORDERING (2026-06-18).** The §8 V1→V5 sequence below was replanned **Live-first**:
+> free unlimited Gemini Live access + mid-session RAG via a `recall_memory` function tool make V2/V3/V4
+> redundant (Live has native audio in/out, VAD, interruption). V1 stays as fallback; build **L1 (Live
+> single-agent free-talk)** next, then **L2 (multi-agent voice panel, Live + LangGraph)**. Current plan
+> of record: `Personas/05 — Frontend/Voice Session Roadmap — V1 to V5.md`. The detail below is still
+> accurate as reference for each technique.
+
 Focused, code-grounded plan for adding **live voice** to the existing text chat. This is Phase 4
 ("Voice — mic STT + audio TTS loop") — the current active focus per the vault's Current Context.
 
