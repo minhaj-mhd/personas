@@ -3,9 +3,11 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
+
 class ConversationCreate(BaseModel):
     persona_id: uuid.UUID
     title: Optional[str] = None
+
 
 class MessageResponse(BaseModel):
     id: uuid.UUID
@@ -17,6 +19,7 @@ class MessageResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class ConversationResponse(BaseModel):
     id: uuid.UUID

@@ -6,6 +6,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class GeminiService:
     def __init__(self):
         # Initialize the client using API key from settings
@@ -16,17 +17,14 @@ class GeminiService:
         system_instruction: str,
         chat_history: List[types.Content],
         user_message: str,
-        temperature: float = 0.8
+        temperature: float = 0.8,
     ) -> AsyncGenerator[str, None]:
         """
         Asynchronously streams token deltas from Gemini.
         """
         contents = list(chat_history)
         contents.append(
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=user_message)]
-            )
+            types.Content(role="user", parts=[types.Part.from_text(text=user_message)])
         )
 
         try:
@@ -36,7 +34,7 @@ class GeminiService:
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
                     temperature=temperature,
-                )
+                ),
             )
             async for chunk in response:
                 if chunk.text:

@@ -25,6 +25,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # Initialize Jinja2 templates engine
 templates = Jinja2Templates(directory=templates_dir)
 
+
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """
@@ -33,15 +34,10 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     try:
         # Simple test query to check DB availability
         await db.execute(text("SELECT 1"))
-        return {
-            "status": "ok",
-            "database": "connected"
-        }
+        return {"status": "ok", "database": "connected"}
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "database": f"Error: {str(e)}"
-        }
+        return {"status": "unhealthy", "database": f"Error: {str(e)}"}
+
 
 @app.get("/web/health-badge", response_class=HTMLResponse)
 async def web_health_badge(db: AsyncSession = Depends(get_db)):
@@ -70,13 +66,16 @@ async def web_health_badge(db: AsyncSession = Depends(get_db)):
         </div>
         """
 
+
 # Import and include routers
 from app.api.personas import router as personas_api_router  # noqa: E402
 from app.api.conversations import router as conversations_api_router  # noqa: E402
 from app.api.voice_ws import router as voice_ws_router  # noqa: E402
+from app.api.live_ws import router as live_ws_router  # noqa: E402
 from app.web.views import router as web_views_router  # noqa: E402
 
 app.include_router(personas_api_router)
 app.include_router(conversations_api_router)
 app.include_router(voice_ws_router)
+app.include_router(live_ws_router)
 app.include_router(web_views_router)

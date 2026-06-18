@@ -7,6 +7,7 @@ from app.db import async_session_maker
 from app.main import app
 from app.models.persona import Persona
 
+
 @pytest_asyncio.fixture
 async def db_session():
     """
@@ -14,6 +15,7 @@ async def db_session():
     """
     async with async_session_maker() as session:
         yield session
+
 
 async def clean_custom_personas(session):
     """
@@ -25,6 +27,7 @@ async def clean_custom_personas(session):
         await session.commit()
     except Exception:
         await session.rollback()
+
 
 @pytest.mark.asyncio
 async def test_create_persona(db_session):
@@ -43,16 +46,16 @@ async def test_create_persona(db_session):
                 "constraints": "none",
                 "domain_expertise": "testing",
                 "voice": "en-US-Neural2-F",
-                "temperature": 0.5
+                "temperature": 0.5,
             }
             response = await ac.post("/api/personas", json=payload)
-        
+
         assert response.status_code == 201
         data = response.json()
         assert data["name"] == "Test Bot"
         assert data["is_builtin"] is False
         assert "PERSONALITY: helpful, polite" in data["system_prompt"]
-        
+
         # Verify it exists in database using a fresh query
         stmt = select(Persona).where(Persona.name == "Test Bot")
         result = await db_session.execute(stmt)
@@ -62,6 +65,7 @@ async def test_create_persona(db_session):
     finally:
         await clean_custom_personas(db_session)
 
+
 @pytest.mark.asyncio
 async def test_list_personas(db_session):
     """
@@ -69,17 +73,15 @@ async def test_list_personas(db_session):
     """
     try:
         mock_persona = Persona(
-            name="Mock Bot",
-            system_prompt="You are a mock",
-            is_builtin=False
+            name="Mock Bot", system_prompt="You are a mock", is_builtin=False
         )
         db_session.add(mock_persona)
         await db_session.commit()
-        
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             response = await ac.get("/api/personas")
-            
+
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 1
@@ -88,6 +90,7 @@ async def test_list_personas(db_session):
     finally:
         await clean_custom_personas(db_session)
 
+
 @pytest.mark.asyncio
 async def test_restrict_builtin_modification(db_session):
     """
@@ -95,20 +98,20 @@ async def test_restrict_builtin_modification(db_session):
     """
     try:
         builtin_persona = Persona(
-            name="Seeded Bot",
-            system_prompt="You are seeded",
-            is_builtin=True
+            name="Seeded Bot", system_prompt="You are seeded", is_builtin=True
         )
         db_session.add(builtin_persona)
         await db_session.commit()
-        
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             # Try updating
-            update_resp = await ac.put(f"/api/personas/{builtin_persona.id}", json={"name": "New Name"})
+            update_resp = await ac.put(
+                f"/api/personas/{builtin_persona.id}", json={"name": "New Name"}
+            )
             assert update_resp.status_code == 400
             assert "Built-in" in update_resp.json()["detail"]
-            
+
             # Try deleting
             delete_resp = await ac.delete(f"/api/personas/{builtin_persona.id}")
             assert delete_resp.status_code == 400
@@ -119,6 +122,7 @@ async def test_restrict_builtin_modification(db_session):
         await db_session.commit()
     finally:
         await clean_custom_personas(db_session)
+
 
 @pytest.mark.asyncio
 async def test_update_custom_persona(db_session):
@@ -131,24 +135,25 @@ async def test_update_custom_persona(db_session):
             description="Old bio",
             system_prompt="You are Old",
             personality_traits=["sad"],
-            is_builtin=False
+            is_builtin=False,
         )
         db_session.add(persona)
         await db_session.commit()
-        
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             response = await ac.put(
                 f"/api/personas/{persona.id}",
-                json={"name": "New Name", "personality_traits": "happy, cheerful"}
+                json={"name": "New Name", "personality_traits": "happy, cheerful"},
             )
-            
+
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "New Name"
         assert "PERSONALITY: happy, cheerful" in data["system_prompt"]
     finally:
         await clean_custom_personas(db_session)
+
 
 @pytest.mark.asyncio
 async def test_delete_custom_persona(db_session):
@@ -157,19 +162,17 @@ async def test_delete_custom_persona(db_session):
     """
     try:
         persona = Persona(
-            name="To Delete",
-            system_prompt="You will die",
-            is_builtin=False
+            name="To Delete", system_prompt="You will die", is_builtin=False
         )
         db_session.add(persona)
         await db_session.commit()
-        
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             response = await ac.delete(f"/api/personas/{persona.id}")
-            
+
         assert response.status_code == 204
-        
+
         # Check that it's no longer present
         stmt = select(Persona).where(Persona.id == persona.id)
         result = await db_session.execute(stmt)

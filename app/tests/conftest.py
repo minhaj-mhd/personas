@@ -16,9 +16,11 @@ from app.models.persona import Persona
 if platform.system() == "Windows":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
+
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def clean_database_before_tests():

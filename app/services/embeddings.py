@@ -4,6 +4,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class EmbeddingsService:
     def __init__(self):
         # Initialize Google GenAI client
@@ -15,8 +16,7 @@ class EmbeddingsService:
         """
         try:
             response = await self.client.aio.models.embed_content(
-                model=settings.EMBED_MODEL,
-                contents=text
+                model=settings.EMBED_MODEL, contents=text
             )
             return response.embeddings[0].values
         except Exception as e:
@@ -31,8 +31,7 @@ class EmbeddingsService:
             return []
         try:
             response = await self.client.aio.models.embed_content(
-                model=settings.EMBED_MODEL,
-                contents=texts
+                model=settings.EMBED_MODEL, contents=texts
             )
             return [e.values for e in response.embeddings]
         except Exception as e:

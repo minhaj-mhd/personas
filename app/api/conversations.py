@@ -9,13 +9,22 @@ from app.db import get_db
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.persona import Persona
-from app.schemas.conversations import ConversationCreate, ConversationResponse, MessageResponse
+from app.schemas.conversations import (
+    ConversationCreate,
+    ConversationResponse,
+    MessageResponse,
+)
 from app.services.summarizer import SummarizerService
 
 router = APIRouter(prefix="/api/conversations", tags=["Conversations"])
 
-@router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
-async def create_conversation(payload: ConversationCreate, db: AsyncSession = Depends(get_db)):
+
+@router.post(
+    "", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_conversation(
+    payload: ConversationCreate, db: AsyncSession = Depends(get_db)
+):
     """
     Create a new conversation session for a persona.
     """
@@ -25,29 +34,25 @@ async def create_conversation(payload: ConversationCreate, db: AsyncSession = De
     persona = persona_result.scalar_one_or_none()
     if not persona:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Persona not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found"
         )
-    
+
     # Generate default title if not provided
     title = payload.title
     if not title:
         now = datetime.now()
         title = f"Session — {now.strftime('%B %d, %Y, %I:%M %p')}"
 
-    conversation = Conversation(
-        persona_id=payload.persona_id,
-        title=title
-    )
+    conversation = Conversation(persona_id=payload.persona_id, title=title)
     db.add(conversation)
     await db.commit()
     await db.refresh(conversation)
     return conversation
 
+
 @router.get("", response_model=List[ConversationResponse])
 async def list_conversations(
-    persona_id: Optional[uuid.UUID] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    persona_id: Optional[uuid.UUID] = Query(None), db: AsyncSession = Depends(get_db)
 ):
     """
     List conversations, optionally filtered by persona_id, ordered by last update.
@@ -59,6 +64,7 @@ async def list_conversations(
     result = await db.execute(stmt)
     return result.scalars().all()
 
+
 @router.get("/{id}", response_model=ConversationResponse)
 async def get_conversation(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """
@@ -69,10 +75,10 @@ async def get_conversation(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     conversation = result.scalar_one_or_none()
     if not conversation:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
     return conversation
+
 
 @router.get("/{id}/messages", response_model=List[MessageResponse])
 async def get_conversation_messages(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
@@ -84,13 +90,17 @@ async def get_conversation_messages(id: uuid.UUID, db: AsyncSession = Depends(ge
     conv_result = await db.execute(conv_stmt)
     if not conv_result.scalar_one_or_none():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
-        
-    stmt = select(Message).where(Message.conversation_id == id).order_by(Message.created_at.asc())
+
+    stmt = (
+        select(Message)
+        .where(Message.conversation_id == id)
+        .order_by(Message.created_at.asc())
+    )
     result = await db.execute(stmt)
     return result.scalars().all()
+
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
@@ -102,15 +112,17 @@ async def delete_conversation(id: uuid.UUID, db: AsyncSession = Depends(get_db))
     conversation = result.scalar_one_or_none()
     if not conversation:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
     await db.delete(conversation)
     await db.commit()
     return
 
+
 @router.post("/{id}/summarize", status_code=status.HTTP_200_OK)
-async def trigger_conversation_summary(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def trigger_conversation_summary(
+    id: uuid.UUID, db: AsyncSession = Depends(get_db)
+):
     """
     Manually triggers rolling summarization for the conversation (ignores threshold check).
     """
@@ -118,8 +130,7 @@ async def trigger_conversation_summary(id: uuid.UUID, db: AsyncSession = Depends
     res = await db.execute(stmt)
     if not res.scalar_one_or_none():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
 
     summarizer_service = SummarizerService()

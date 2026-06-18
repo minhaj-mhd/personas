@@ -1,5 +1,6 @@
 from typing import List, Union
 
+
 def assemble_system_prompt(
     name: str,
     description: str,
@@ -7,7 +8,7 @@ def assemble_system_prompt(
     speaking_style: str | None,
     goals: str | None,
     constraints: str | None,
-    domain_expertise: str | None
+    domain_expertise: str | None,
 ) -> str:
     """
     Assembles a structured system prompt from persona characteristics.
@@ -19,7 +20,7 @@ def assemble_system_prompt(
 
     prompt = f"You are {name}, {description}.\n"
     prompt += f"PERSONALITY: {traits_prose}\n"
-    
+
     if speaking_style:
         prompt += f"SPEAKING STYLE: {speaking_style}\n"
     if goals:
@@ -35,12 +36,13 @@ def assemble_system_prompt(
     )
     return prompt
 
-def inject_memories_into_prompt(base_prompt: str, memories: list) -> str:
+
+def format_retrieved_memories(memories: list) -> str:
     """
-    Injects narrative summaries and retrieved semantic facts/documents into the base prompt.
+    Formats narrative summaries and retrieved semantic facts/documents into a string block.
     """
     if not memories:
-        return base_prompt
+        return ""
 
     summaries = []
     facts_and_docs = []
@@ -50,17 +52,31 @@ def inject_memories_into_prompt(base_prompt: str, memories: list) -> str:
             summaries.append(mem.content)
         else:
             prefix = ""
-            if mem.memory_type == "document" and mem.metadata_ and "source" in mem.metadata_:
+            if (
+                hasattr(mem, "metadata_")
+                and mem.metadata_
+                and "source" in mem.metadata_
+            ):
                 prefix = f"[{mem.metadata_['source']}]: "
             facts_and_docs.append(f"- {prefix}{mem.content}")
 
-    injected = base_prompt + "\n\n### LONG-TERM MEMORY & CONTEXT\n"
-    
+    injected = "### LONG-TERM MEMORY & CONTEXT\n"
+
     if summaries:
         injected += f"Narrative Summary of Past Conversations:\n{summaries[0]}\n\n"
-        
+
     if facts_and_docs:
         injected += "Extracted Facts & Uploaded Reference Materials:\n"
         injected += "\n".join(facts_and_docs) + "\n"
 
     return injected.strip()
+
+
+def inject_memories_into_prompt(base_prompt: str, memories: list) -> str:
+    """
+    Injects narrative summaries and retrieved semantic facts/documents into the base prompt.
+    """
+    memory_block = format_retrieved_memories(memories)
+    if memory_block:
+        return base_prompt + "\n\n" + memory_block
+    return base_prompt

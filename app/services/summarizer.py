@@ -14,9 +14,11 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class SummaryOutput(BaseModel):
     summary: str
     facts: list[str]
+
 
 class SummarizerService:
     def __init__(self):
@@ -24,7 +26,9 @@ class SummarizerService:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.embeddings_service = EmbeddingsService()
 
-    async def maybe_summarize(self, conversation_id: uuid.UUID, force: bool = False) -> None:
+    async def maybe_summarize(
+        self, conversation_id: uuid.UUID, force: bool = False
+    ) -> None:
         """
         Asynchronously checks if a conversation session has enough unsummarized turns,
         updates the narrative summary, extracts facts/preferences, and embeds them.
@@ -36,7 +40,11 @@ class SummarizerService:
                 return
 
             # 2. Query all messages chronologically
-            stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
+            stmt = (
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .order_by(Message.created_at.asc())
+            )
             res = await session.execute(stmt)
             messages = res.scalars().all()
             if not messages:
@@ -92,20 +100,20 @@ class SummarizerService:
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_schema=SummaryOutput,
-                        temperature=0.2
-                    )
+                        temperature=0.2,
+                    ),
                 )
-                
+
                 # Parse and validate output
                 result = SummaryOutput.model_validate_json(response.text)
-                
+
                 # 5. Add the new narrative summary to memories table
                 new_summary_mem = Memory(
                     conversation_id=conversation_id,
                     persona_id=conversation.persona_id,
                     memory_type="summary",
                     content=result.summary,
-                    importance_score=0.5
+                    importance_score=0.5,
                 )
                 session.add(new_summary_mem)
 
@@ -119,7 +127,7 @@ class SummarizerService:
                             memory_type="fact",
                             content=fact,
                             embedding=emb,
-                            importance_score=0.8
+                            importance_score=0.8,
                         )
                         session.add(fact_mem)
 
@@ -127,7 +135,9 @@ class SummarizerService:
                 conversation.last_summarized_message_id = unsummarized[-1].id
                 conversation.updated_at = datetime.now(timezone.utc)
                 await session.commit()
-                logger.info(f"Rolling summarization executed successfully for conversation: {conversation_id}")
+                logger.info(
+                    f"Rolling summarization executed successfully for conversation: {conversation_id}"
+                )
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Rolling summarization failed: {e}")

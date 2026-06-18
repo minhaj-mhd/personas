@@ -34,6 +34,15 @@
         </div>
 
         <div class="flex items-center gap-3">
+            <div id="live-status" class="hidden px-3 py-1 rounded-lg text-xs font-mono bg-slate-900 border border-slate-800 text-slate-400 max-w-sm truncate" title="Live Status"></div>
+            
+            <button 
+                id="live-btn" 
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/25 transition-all duration-150 flex items-center gap-1.5"
+            >
+                <i class="fa-solid fa-headset text-[10px]"></i> <span id="live-btn-text">Go Live</span>
+            </button>
+
             <div id="action-status" class="hidden px-3 py-1 rounded-lg text-xs font-mono bg-slate-900 border border-slate-800 text-slate-400 flex items-center gap-2">
                 <i class="fa-solid fa-circle-notch animate-spin text-brand-400 text-[10px]"></i>
                 <span id="status-text">Thinking</span>
@@ -136,4 +145,107 @@
 </script>
 <!-- Client-side WebSocket integration code -->
 <script src="/static/js/ws.js"></script>
+<!-- Client-side Gemini Live integration (WP-3/WP-4) -->
+<script src="/static/js/live.js"></script>
+<script>
+    // Live UI logic (WP-4)
+    document.addEventListener('DOMContentLoaded', () => {
+        const liveBtn = document.getElementById('live-btn');
+        const liveBtnText = document.getElementById('live-btn-text');
+        const liveStatus = document.getElementById('live-status');
+        const messagesContainer = document.getElementById('messages-container');
+        const streamingAnchor = document.getElementById('live-streaming-anchor');
+        
+        let isLive = false;
+
+        window.LiveUI = {
+            setStatus: (state, text = '') => {
+                liveStatus.classList.remove('hidden');
+                if (state === 'connecting') {
+                    liveStatus.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin text-brand-400 mr-1"></i> Connecting...`;
+                    liveBtnText.textContent = 'Connecting...';
+                } else if (state === 'live') {
+                    liveStatus.innerHTML = `<span class="w-2 h-2 inline-block rounded-full bg-brand-500 animate-pulse mr-1"></span> Live`;
+                    liveBtnText.textContent = 'End Live';
+                    liveBtn.classList.replace('text-indigo-400', 'text-rose-400');
+                    liveBtn.classList.replace('bg-indigo-500/10', 'bg-rose-500/10');
+                    liveBtn.classList.replace('border-indigo-500/20', 'border-rose-500/20');
+                    liveBtn.classList.replace('hover:bg-indigo-500/25', 'hover:bg-rose-500/25');
+                    isLive = true;
+                } else if (state === 'ended') {
+                    liveStatus.innerHTML = `Session Ended`;
+                    setTimeout(() => { if(!isLive) liveStatus.classList.add('hidden'); }, 3000);
+                    liveBtnText.textContent = 'Go Live';
+                    liveBtn.classList.replace('text-rose-400', 'text-indigo-400');
+                    liveBtn.classList.replace('bg-rose-500/10', 'bg-indigo-500/10');
+                    liveBtn.classList.replace('border-rose-500/20', 'border-indigo-500/20');
+                    liveBtn.classList.replace('hover:bg-rose-500/25', 'hover:bg-indigo-500/25');
+                    isLive = false;
+                } else if (state === 'error') {
+                    liveStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-rose-500 mr-1"></i> ${text || 'Error'}`;
+                    liveBtnText.textContent = 'Go Live';
+                    liveBtn.classList.replace('text-rose-400', 'text-indigo-400');
+                    liveBtn.classList.replace('bg-rose-500/10', 'bg-indigo-500/10');
+                    liveBtn.classList.replace('border-rose-500/20', 'border-indigo-500/20');
+                    liveBtn.classList.replace('hover:bg-rose-500/25', 'hover:bg-indigo-500/25');
+                    isLive = false;
+                }
+            },
+            setInterim: (text) => {
+                liveStatus.classList.remove('hidden');
+                const el = document.createElement('div');
+                el.innerText = text;
+                liveStatus.innerHTML = `<i class="fa-solid fa-microphone text-brand-400 mr-1 animate-pulse"></i> <span class="truncate">` + el.innerHTML + `</span>`;
+            },
+            addFinalTranscript: (role, text) => {
+                const emptyState = document.getElementById('chat-empty-state');
+                if (emptyState) emptyState.remove();
+
+                const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const div = document.createElement('div');
+                div.className = role === 'user' ? "flex justify-end" : "flex justify-start";
+                
+                const p = document.createElement('p');
+                p.className = "text-sm font-light leading-relaxed whitespace-pre-wrap";
+                p.innerText = text;
+
+                if (role === 'user') {
+                    div.innerHTML = `
+                        <div class="chat-bubble bg-brand-600 text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-md">
+                            ${p.outerHTML}
+                            <span class="block text-[9px] text-brand-200 font-mono text-right mt-1.5">${timeString}</span>
+                        </div>
+                    `;
+                } else {
+                    div.innerHTML = `
+                        <div class="chat-bubble bg-slate-900 border border-slate-850 text-slate-100 rounded-2xl rounded-tl-none px-4 py-3 shadow-md">
+                            ${p.outerHTML}
+                            <span class="block text-[9px] text-slate-500 font-mono mt-1.5">${timeString}</span>
+                        </div>
+                    `;
+                }
+                
+                messagesContainer.insertBefore(div, streamingAnchor);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                
+                if (isLive) {
+                    window.LiveUI.setStatus('live');
+                }
+            }
+        };
+
+        liveBtn.addEventListener('click', () => {
+            if (window.LiveSession) {
+                if (isLive) {
+                    window.LiveSession.stop();
+                } else {
+                    window.LiveSession.start();
+                }
+            } else {
+                console.warn('LiveSession controller not found (WP-3 missing?).');
+                window.LiveUI.setStatus('error', 'Live system not loaded');
+            }
+        });
+    });
+</script>
 {% endblock %}

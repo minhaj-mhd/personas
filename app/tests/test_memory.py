@@ -10,13 +10,16 @@ from app.models import Persona, Conversation, Message, Memory
 from app.services.memory import chunk_text, MemoryService
 from app.services.prompt_builder import inject_memories_into_prompt
 
+
 @pytest_asyncio.fixture
 async def db_session():
     async with async_session_maker() as session:
         yield session
 
+
 async def clean_database(session):
     from sqlalchemy import delete
+
     try:
         await session.execute(delete(Memory))
         await session.execute(delete(Message))
@@ -26,19 +29,23 @@ async def clean_database(session):
     except Exception:
         await session.rollback()
 
+
 # Mocks for Google GenAI Client
 class MockEmbeddingValues:
     def __init__(self):
         self.values = [0.01] * 768
 
+
 class MockEmbeddingsResponse:
     def __init__(self, count=1):
         self.embeddings = [MockEmbeddingValues() for _ in range(count)]
+
 
 async def mock_embed_content(self, model, contents, config=None):
     if isinstance(contents, list):
         return MockEmbeddingsResponse(len(contents))
     return MockEmbeddingsResponse(1)
+
 
 class MockSummaryResponse:
     def __init__(self):
@@ -46,6 +53,7 @@ class MockSummaryResponse:
             '{"summary": "User shared their favorite color is green.", '
             '"facts": ["User\'s favorite color is green"]}'
         )
+
 
 async def mock_generate_content(self, model, contents, config=None):
     return MockSummaryResponse()
@@ -67,9 +75,7 @@ async def test_document_ingestion_and_rag_retrieval(db_session):
     try:
         # 1. Create a persona
         persona = Persona(
-            name="RAG Assistant",
-            system_prompt="You have documents.",
-            is_builtin=False
+            name="RAG Assistant", system_prompt="You have documents.", is_builtin=False
         )
         db_session.add(persona)
         await db_session.commit()
@@ -78,15 +84,19 @@ async def test_document_ingestion_and_rag_retrieval(db_session):
         with patch("google.genai.models.AsyncModels.embed_content", mock_embed_content):
             memory_service = MemoryService()
             # 2. Ingest document
-            doc_text = "Google DeepMind developed the Gemini series of multimodal AI models."
+            doc_text = (
+                "Google DeepMind developed the Gemini series of multimodal AI models."
+            )
             await memory_service.ingest_document(
-                persona_id=persona.id,
-                filename="deepmind.txt",
-                text=doc_text
+                persona_id=persona.id, filename="deepmind.txt", text=doc_text
             )
 
             # Check database chunks
-            stmt = select(Memory).where(Memory.persona_id == persona.id).where(Memory.memory_type == "document")
+            stmt = (
+                select(Memory)
+                .where(Memory.persona_id == persona.id)
+                .where(Memory.memory_type == "document")
+            )
             res = await db_session.execute(stmt)
             chunks = res.scalars().all()
             assert len(chunks) > 0
@@ -96,9 +106,7 @@ async def test_document_ingestion_and_rag_retrieval(db_session):
 
             # 3. Retrieve context via RAG
             retrieved = await memory_service.retrieve_context(
-                persona_id=persona.id,
-                conversation_id=None,
-                user_text="DeepMind models"
+                persona_id=persona.id, conversation_id=None, user_text="DeepMind models"
             )
             assert len(retrieved) > 0
             assert retrieved[0].content == doc_text
@@ -111,32 +119,38 @@ async def test_document_ingestion_and_rag_retrieval(db_session):
 async def test_rolling_summarization_and_facts_extraction(db_session):
     try:
         persona = Persona(
-            name="Socrates",
-            system_prompt="You seek truth.",
-            is_builtin=False
+            name="Socrates", system_prompt="You seek truth.", is_builtin=False
         )
         db_session.add(persona)
         await db_session.commit()
 
-        conv = Conversation(
-            persona_id=persona.id,
-            title="Socratic Dialogue"
-        )
+        conv = Conversation(persona_id=persona.id, title="Socratic Dialogue")
         db_session.add(conv)
         await db_session.commit()
 
         # Add some messages
         m1 = Message(conversation_id=conv.id, role="user", content="Hello Socrates")
-        m2 = Message(conversation_id=conv.id, role="assistant", content="Greetings. What is on your mind?")
-        m3 = Message(conversation_id=conv.id, role="user", content="My favorite color is green.")
+        m2 = Message(
+            conversation_id=conv.id,
+            role="assistant",
+            content="Greetings. What is on your mind?",
+        )
+        m3 = Message(
+            conversation_id=conv.id, role="user", content="My favorite color is green."
+        )
         db_session.add_all([m1, m2, m3])
         await db_session.commit()
 
         # Mock embeddings and Gemini summarizer calls
         with patch("google.genai.models.AsyncModels.embed_content", mock_embed_content):
-            with patch("google.genai.models.AsyncModels.generate_content", mock_generate_content):
+            with patch(
+                "google.genai.models.AsyncModels.generate_content",
+                mock_generate_content,
+            ):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     # Trigger manual summarization
                     resp = await ac.post(f"/api/conversations/{conv.id}/summarize")
                     assert resp.status_code == 200
@@ -145,14 +159,16 @@ async def test_rolling_summarization_and_facts_extraction(db_session):
                 stmt = select(Memory).where(Memory.conversation_id == conv.id)
                 res = await db_session.execute(stmt)
                 memories = res.scalars().all()
-                
+
                 # We expect a summary memory and a fact memory
                 types_in_db = [m.memory_type for m in memories]
                 assert "summary" in types_in_db
                 assert "fact" in types_in_db
 
                 summary_mem = next(m for m in memories if m.memory_type == "summary")
-                assert "User shared their favorite color is green" in summary_mem.content
+                assert (
+                    "User shared their favorite color is green" in summary_mem.content
+                )
 
                 fact_mem = next(m for m in memories if m.memory_type == "fact")
                 assert "User's favorite color is green" in fact_mem.content
@@ -176,9 +192,7 @@ async def test_cross_session_resume_recall(db_session):
     try:
         # 1. Setup Persona
         persona = Persona(
-            name="Memory Bot",
-            system_prompt="I remember things.",
-            is_builtin=False
+            name="Memory Bot", system_prompt="I remember things.", is_builtin=False
         )
         db_session.add(persona)
         await db_session.commit()
@@ -195,7 +209,7 @@ async def test_cross_session_resume_recall(db_session):
             memory_type="fact",
             content="User's favorite color is green",
             embedding=[0.01] * 768,
-            importance_score=0.8
+            importance_score=0.8,
         )
         db_session.add(fact_mem)
         await db_session.commit()
@@ -211,16 +225,18 @@ async def test_cross_session_resume_recall(db_session):
             retrieved = await memory_service.retrieve_context(
                 persona_id=persona.id,
                 conversation_id=conv2.id,
-                user_text="What color do I like?"
+                user_text="What color do I like?",
             )
-            
+
             # Assert that the fact from Session 1 is retrieved for Session 2
             assert len(retrieved) > 0
             retrieved_contents = [m.content for m in retrieved]
             assert "User's favorite color is green" in retrieved_contents
 
             # 5. Verify prompt assembly contains the fact
-            injected_prompt = inject_memories_into_prompt(persona.system_prompt, retrieved)
+            injected_prompt = inject_memories_into_prompt(
+                persona.system_prompt, retrieved
+            )
             assert "### LONG-TERM MEMORY & CONTEXT" in injected_prompt
             assert "User's favorite color is green" in injected_prompt
 

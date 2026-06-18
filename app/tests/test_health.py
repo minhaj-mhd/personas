@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 
+
 @pytest.mark.asyncio
 async def test_health_check():
     """
@@ -15,6 +16,7 @@ async def test_health_check():
     data = response.json()
     assert data["status"] == "ok"
     assert data["database"] == "connected"
+
 
 @pytest.mark.asyncio
 async def test_home_page_renders():
