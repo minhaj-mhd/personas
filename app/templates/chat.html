@@ -35,7 +35,14 @@
 
         <div class="flex items-center gap-3">
             <div id="live-status" class="hidden px-3 py-1 rounded-lg text-xs font-mono bg-slate-900 border border-slate-800 text-slate-400 max-w-sm truncate" title="Live Status"></div>
-            
+
+            <div id="live-meter" class="hidden items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800" title="Mic input level">
+                <i class="fa-solid fa-microphone-lines text-[10px] text-slate-500"></i>
+                <div class="w-16 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div id="live-meter-bar" class="h-full bg-emerald-500" style="width: 0%; transition: width 60ms linear;"></div>
+                </div>
+            </div>
+
             <button 
                 id="live-btn" 
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/25 transition-all duration-150 flex items-center gap-1.5"
@@ -153,6 +160,8 @@
         const liveBtn = document.getElementById('live-btn');
         const liveBtnText = document.getElementById('live-btn-text');
         const liveStatus = document.getElementById('live-status');
+        const liveMeter = document.getElementById('live-meter');
+        const liveMeterBar = document.getElementById('live-meter-bar');
         const messagesContainer = document.getElementById('messages-container');
         const streamingAnchor = document.getElementById('live-streaming-anchor');
         
@@ -172,6 +181,8 @@
                     liveBtn.classList.replace('border-indigo-500/20', 'border-rose-500/20');
                     liveBtn.classList.replace('hover:bg-indigo-500/25', 'hover:bg-rose-500/25');
                     isLive = true;
+                    liveMeter.classList.remove('hidden');
+                    liveMeter.classList.add('flex');
                 } else if (state === 'ended') {
                     liveStatus.innerHTML = `Session Ended`;
                     setTimeout(() => { if(!isLive) liveStatus.classList.add('hidden'); }, 3000);
@@ -181,6 +192,9 @@
                     liveBtn.classList.replace('border-rose-500/20', 'border-indigo-500/20');
                     liveBtn.classList.replace('hover:bg-rose-500/25', 'hover:bg-indigo-500/25');
                     isLive = false;
+                    liveMeter.classList.add('hidden');
+                    liveMeter.classList.remove('flex');
+                    liveMeterBar.style.width = '0%';
                 } else if (state === 'error') {
                     liveStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-rose-500 mr-1"></i> ${text || 'Error'}`;
                     liveBtnText.textContent = 'Go Live';
@@ -189,6 +203,9 @@
                     liveBtn.classList.replace('border-rose-500/20', 'border-indigo-500/20');
                     liveBtn.classList.replace('hover:bg-rose-500/25', 'hover:bg-indigo-500/25');
                     isLive = false;
+                    liveMeter.classList.add('hidden');
+                    liveMeter.classList.remove('flex');
+                    liveMeterBar.style.width = '0%';
                 }
             },
             setInterim: (text) => {
@@ -233,6 +250,26 @@
                 }
             }
         };
+
+        if (window.LiveAudioClient && !window.LiveSession) {
+            window.LiveSession = new window.LiveAudioClient();
+            window.LiveSession.onStatus = window.LiveUI.setStatus;
+            window.LiveSession.onInputTranscript = (text, final) => {
+                if (final) window.LiveUI.addFinalTranscript('user', text);
+                else window.LiveUI.setInterim('User: ' + text);
+            };
+            window.LiveSession.onOutputTranscript = (text, final) => {
+                if (final) window.LiveUI.addFinalTranscript('assistant', text);
+                else window.LiveUI.setInterim('Assistant: ' + text);
+            };
+            window.LiveSession.onLevel = (rms) => {
+                // rms is typically 0.0..~0.3 for normal speech; scale for a visible bar
+                const pct = Math.min(100, Math.round(rms * 400));
+                liveMeterBar.style.width = pct + '%';
+                liveMeterBar.classList.toggle('bg-emerald-500', rms > 0.01);
+                liveMeterBar.classList.toggle('bg-slate-600', rms <= 0.01);
+            };
+        }
 
         liveBtn.addEventListener('click', () => {
             if (window.LiveSession) {

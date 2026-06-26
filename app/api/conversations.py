@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,8 @@ from app.schemas.conversations import (
     MessageResponse,
 )
 from app.services.summarizer import SummarizerService
+from app.services.export import render_conversation_markdown, safe_filename
+from app.services.search import make_snippet
 
 router = APIRouter(prefix="/api/conversations", tags=["Conversations"])
 
@@ -63,6 +65,66 @@ async def list_conversations(
     stmt = stmt.order_by(Conversation.updated_at.desc())
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+@router.get("/search")
+async def search_conversations(
+    q: str = Query(..., min_length=1, description="Text to search across message content"),
+    persona_id: Optional[uuid.UUID] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Full-text search across message content. Returns matching conversations (grouped) with a
+    snippet around the first hit and a match count, newest first. Defined before /{id} so the
+    literal path wins routing.
+    """
+    pattern = f"%{q}%"
+    stmt = (
+        select(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Message.content.ilike(pattern))
+    )
+    if persona_id:
+        stmt = stmt.where(Conversation.persona_id == persona_id)
+    stmt = stmt.order_by(Message.created_at.desc())
+    rows = (await db.execute(stmt)).scalars().all()
+
+    grouped: dict = {}
+    for m in rows:
+        g = grouped.setdefault(m.conversation_id, {"count": 0, "snippet": None})
+        g["count"] += 1
+        if g["snippet"] is None:
+            g["snippet"] = make_snippet(m.content, q)
+
+    conv_ids = list(grouped.keys())[:limit]
+    if not conv_ids:
+        return []
+
+    convs = (
+        (await db.execute(select(Conversation).where(Conversation.id.in_(conv_ids))))
+        .scalars()
+        .all()
+    )
+    conv_by_id = {c.id: c for c in convs}
+
+    results = []
+    for cid in conv_ids:
+        c = conv_by_id.get(cid)
+        if not c:
+            continue
+        results.append(
+            {
+                "conversation_id": str(cid),
+                "title": c.title,
+                "persona_id": str(c.persona_id),
+                "snippet": grouped[cid]["snippet"],
+                "match_count": grouped[cid]["count"],
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            }
+        )
+    results.sort(key=lambda r: r["updated_at"] or "", reverse=True)
+    return results
 
 
 @router.get("/{id}", response_model=ConversationResponse)
@@ -117,6 +179,55 @@ async def delete_conversation(id: uuid.UUID, db: AsyncSession = Depends(get_db))
     await db.delete(conversation)
     await db.commit()
     return
+
+
+@router.get("/{id}/export")
+async def export_conversation(
+    id: uuid.UUID,
+    format: str = Query("md", description="Export format (currently only 'md')"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Export a conversation transcript as a downloadable file. Markdown ('md') is supported now;
+    other formats (e.g. 'pdf') return 400 until implemented.
+    """
+    if format != "md":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported export format '{format}'. Only 'md' is supported.",
+        )
+
+    conv = (
+        await db.execute(select(Conversation).where(Conversation.id == id))
+    ).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
+        )
+
+    persona = (
+        await db.execute(select(Persona).where(Persona.id == conv.persona_id))
+    ).scalar_one_or_none()
+
+    messages = (
+        (
+            await db.execute(
+                select(Message)
+                .where(Message.conversation_id == id)
+                .order_by(Message.created_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    markdown = render_conversation_markdown(conv, persona, messages)
+    filename = f"{safe_filename(conv.title)}.md"
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{id}/summarize", status_code=status.HTTP_200_OK)

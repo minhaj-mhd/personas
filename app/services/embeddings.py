@@ -1,5 +1,5 @@
 import logging
-from google import genai
+import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -7,21 +7,27 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingsService:
     def __init__(self):
-        # Initialize Google GenAI client
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+        self.model = settings.OLLAMA_EMBED_MODEL
+
+    async def _embed(self, inputs: list[str]) -> list[list[float]]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/embed",
+                json={"model": self.model, "input": inputs},
+            )
+            resp.raise_for_status()
+            return resp.json()["embeddings"]
 
     async def embed_text(self, text: str) -> list[float]:
         """
         Generates a 768-dimension vector embedding for a single text.
         """
         try:
-            response = await self.client.aio.models.embed_content(
-                model=settings.EMBED_MODEL, contents=text
-            )
-            return response.embeddings[0].values
+            return (await self._embed([text]))[0]
         except Exception as e:
             logger.error(f"Error generating text embedding: {e}")
-            raise e
+            raise
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """
@@ -30,10 +36,7 @@ class EmbeddingsService:
         if not texts:
             return []
         try:
-            response = await self.client.aio.models.embed_content(
-                model=settings.EMBED_MODEL, contents=texts
-            )
-            return [e.values for e in response.embeddings]
+            return await self._embed(texts)
         except Exception as e:
             logger.error(f"Error generating batch text embeddings: {e}")
-            raise e
+            raise

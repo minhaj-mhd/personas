@@ -1,5 +1,12 @@
 # AI Multi-Persona Voice Agent Platform — Implementation Plan
 
+> **📌 Status (2026-06-25):** This is the *original* plan. Build has progressed through **Phase 5**.
+> What actually shipped differs in places — the **memory layer runs on local Ollama** (`nomic-embed-text` +
+> `qwen3:8b`), not Gemini embeddings; **voice went Live-first** (Gemini Live single-agent **L1** + a host-led
+> **multi-agent voice panel L2**) rather than the turn-based pipeline below. For current state, see the vault:
+> `Personas/06 — Logs/Current Context.md`, `Personas/03 — Memory Layer/`, and
+> `Personas/01 — Architecture/Master Plan — Voice Panel (Host-Led, Subagent-Ready).md`.
+
 A stateful, multi-persona voice AI platform. Each agent has a distinct identity, persistent
 memory, and conversational style. Users switch personas, talk by voice, and resume past
 sessions with full contextual continuity. Reasoning runs on the **Gemini API**, backend on

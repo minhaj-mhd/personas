@@ -10,15 +10,25 @@ class Settings(BaseSettings):
     # Model configuration
     EMBED_MODEL: str = "text-embedding-004"
     CHAT_MODEL: str = "gemini-2.5-flash"
-    SUMMARY_MODEL: str = "gemini-2.5-pro"
+    # NOTE: gemini-2.5-pro has a free-tier quota of 0 (every summarize call returns
+    # 429 RESOURCE_EXHAUSTED), which silently breaks session-end summarization and the
+    # long-term memory it feeds. Use flash, which has free quota. Override via .env if
+    # you move to a paid tier and want pro-quality summaries.
+    SUMMARY_MODEL: str = "gemini-2.5-flash"
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_SUMMARY_MODEL: str = "qwen3:8b"
+    OLLAMA_EMBED_MODEL: str = "nomic-embed-text"
 
     # Live voice (full-duplex) configuration — Voice L1
     # Override LIVE_MODEL via .env to point at whichever Live model you have access to
     # (e.g. a Gemini 3 Flash Live model). Must be a half-cascade/native-audio Live model.
-    LIVE_MODEL: str = "gemini-live-2.5-flash-preview"
+    LIVE_MODEL: str = "gemini-3.1-flash-live-preview"
     LIVE_VOICE: str = (
         "Puck"  # default prebuilt voice when persona.voice is unset/invalid
     )
+    # Pin the Live STT/response language so short, accented English utterances aren't
+    # auto-detected as Spanish/Portuguese/etc. Set to "" to restore auto-detection.
+    LIVE_LANGUAGE: str = "en-US"
     LIVE_ENABLE_SEARCH: bool = (
         False  # also expose Google Search grounding in the live session
     )

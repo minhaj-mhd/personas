@@ -2,7 +2,7 @@
 title: "How RAG and Persistent Memory Work"
 type: guide
 status: active
-updated: 2026-06-17
+updated: 2026-06-25
 ---
 
 # 🧠 How RAG and Persistent Memory Work
@@ -17,7 +17,7 @@ The memory layer is split into **two tiers** that are assembled dynamically for 
 
 ```mermaid
 graph TD
-    UserQuery["User Input (Text)"] --> EmbedQuery["Embeddings Service (text-embedding-004)"]
+    UserQuery["User Input (Text)"] --> EmbedQuery["Embeddings Service (nomic-embed-text via Ollama)"]
     EmbedQuery --> VectorSearch["pgvector Cosine Distance Search"]
     VectorSearch --> MatchMemories["Semantic Memories (Facts & Document Chunks)"]
     
@@ -33,8 +33,8 @@ graph TD
 
 ## 1. Embeddings Generation
 
-We use Google's **`text-embedding-004`** model, which outputs a **768-dimension vector** for any input text.
-- **Service**: [embeddings.py](file:///c:/Users/loq/Desktop/learn/personas/app/services/embeddings.py) wraps the async `Client.aio.models.embed_content` SDK method.
+We use the local **`nomic-embed-text`** model via Ollama, which outputs a **768-dimension vector** for any input text.
+- **Service**: [embeddings.py](file:///c:/Users/loq/Desktop/learn/personas/app/services/embeddings.py) wraps the async `httpx` call to Ollama's HTTP backend.
 - **Format**: Floating-point array of length 768.
 - **Storage**: Saved inside the `embedding` column of the `memories` table (which is mapped to the PostgreSQL `vector(768)` type via the `pgvector` SQLAlchemy extension).
 
@@ -59,7 +59,7 @@ When a text or markdown document is uploaded for a persona:
 
 To retrieve relevant context for a user's turn:
 1. **Query Embedding**: The user's input (e.g., *"What is my favorite book?"*) is embedded.
-2. **pgvector Query**: We run a cosine-distance search in PostgreSQL using the `<->` operator in SQL (accessed via `.cosine_distance()` in SQLAlchemy):
+2. **pgvector Query**: We run a cosine-distance search in PostgreSQL using the `<=>` cosine operator in SQL (accessed via `.cosine_distance()` in SQLAlchemy; note `<->` is L2/Euclidean, `<=>` is cosine):
    ```python
    distance = Memory.embedding.cosine_distance(query_embedding)
    stmt = (
@@ -82,8 +82,8 @@ To prevent long chat threads from exceeding context limits or inflating token co
 
 1. **Watermark**: The `conversations` table stores `last_summarized_message_id`.
 2. **Trigger**: When the number of messages after the watermark exceeds `SUMMARIZE_THRESHOLD` (default: 10), summarization starts.
-3. **Gemini Extraction**: We send the previous narrative summary and the new unsummarized messages to **`gemini-2.5-pro`**.
-   - **Structured Outputs**: We enforce a strict JSON schema using a Pydantic model (`SummaryOutput`) passed as `response_schema` to the Gemini client:
+3. **Ollama Extraction**: We send the previous narrative summary and the new unsummarized messages to the local **`qwen3:8b`** model via Ollama's `/api/chat`.
+   - **Structured Outputs**: We enforce a strict JSON schema using a Pydantic model (`SummaryOutput`) passed as `format` to the Ollama client:
      ```python
      class SummaryOutput(BaseModel):
          summary: str   # Narrative summary paragraph

@@ -2,7 +2,7 @@
 title: "Frontend Overview"
 type: reference
 status: active
-updated: 2026-06-17
+updated: 2026-06-25
 ---
 
 # 🖥️ Frontend Overview (Server-Rendered + HTMX)
@@ -26,13 +26,19 @@ All views are mapped inside [views.py](file:///c:/Users/loq/Desktop/learn/person
 - **Knowledge Base Panel**: Drag-and-drop file upload form and raw text paste inputs. These target `/api/personas/{id}/documents` and reload the page on completion to show updated documents.
 
 ### 3. Chat Session Layout ([chat.html](file:///c:/Users/loq/Desktop/learn/personas/app/templates/chat.html))
-- Mapped to `GET /chat/{id}`.
-- Pre-renders existing messages from the database.
-- Loads the WebSocket configuration block and initializes the real-time client controller [ws.js](file:///c:/Users/loq/Desktop/learn/personas/app/static/js/ws.js).
+- Mapped to `GET /chat/{id}`. Pre-renders messages; initializes [ws.js](file:///c:/Users/loq/Desktop/learn/personas/app/static/js/ws.js) (text chat).
+- **Voice V1** (`#mic-btn`, push-to-talk, Web Speech STT + `SpeechSynthesis`).
+- **"Go Live"** (`#live-btn`) → [live.js](file:///c:/Users/loq/Desktop/learn/personas/app/static/js/live.js) `LiveAudioClient` → `/ws/live/{id}` (single-agent Gemini Live full-duplex).
 
 ### 4. Custom Persona Prompt Form ([persona_form.html](file:///c:/Users/loq/Desktop/learn/personas/app/templates/persona_form.html))
 - Mapped to `GET /personas/new` or `GET /personas/{id}/edit`.
 - Allows creating/updating custom personas (defining speaking style, personality traits, and goals).
+
+### 5. Voice Panel — Voice L2 ([panel.html](file:///c:/Users/loq/Desktop/learn/personas/app/templates/panel.html))
+- Mapped to `GET /panel`. Roster picker → live panel (active-speaker chip + transcript).
+- [panel.js](file:///c:/Users/loq/Desktop/learn/personas/app/static/js/panel.js) `PanelAudioClient extends LiveAudioClient`
+  (reuses the mic/audio engine; adds `select_roster` handshake + `active_speaker`/`transcript`/`handoff` handling) → `/ws/panel/{id}`.
+- See [[05 — Frontend/Live Voice Session]] and [[01 — Architecture/Master Plan — Voice Panel (Host-Led, Subagent-Ready)]].
 
 ---
 

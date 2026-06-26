@@ -2,7 +2,7 @@
 title: "Architecture Overview"
 type: reference
 status: active
-updated: 2026-06-17
+updated: 2026-06-25
 ---
 
 # 🏛️ Architecture Overview
@@ -12,14 +12,16 @@ This note is the vault-side pointer + the short version.
 
 ## Locked decisions
 - **Backend**: FastAPI (async), single app container also serving the UI.
-- **Frontend**: Jinja2 templates + HTMX (server-rendered, light — no Node build). Voice client is the only real JS.
-- **LLM**: Gemini, single-provider — `gemini-2.5-flash` (chat), `gemini-2.5-pro` (summaries), `text-embedding-004` (embeddings).
+- **Frontend**: Jinja2 templates + HTMX (server-rendered, light — no Node build). Voice clients (`live.js`/`panel.js`) are the real JS.
+- **LLM (hybrid)**: **Gemini** for realtime (`gemini-2.5-flash` text chat, `LIVE_MODEL` for Live voice) +
+  **local Ollama** for the memory layer (`nomic-embed-text` embeddings, `qwen3:8b` summaries — quota-free).
 - **DB**: Postgres + pgvector (relational + vectors in one store).
-- **Voice**: turn-based pipeline first (browser STT/TTS), Gemini Live API later.
+- **Voice**: shipped — V1 browser STT/TTS (fallback), **L1 single-agent Gemini Live**, **L2 host-led multi-agent panel** (LangGraph-style floor routing).
 - **Auth**: **none** — single-user personal project. Add a `users` table + JWT later only if it goes multi-user.
 
-## Phase roadmap (MVP = 0–4)
-- P0 Scaffold · P1 Persona CRUD + dashboard · P2 Text conversation loop · P3 **Memory layer (the differentiator)** · P4 Voice · P5 Enhancements.
+## Phase roadmap
+- ✅ P0 Scaffold · P1 Persona CRUD · P2 Text loop · P3 **Memory layer** · P4 Voice (V1 + Live L1)
+- 🔨 **P5 Enhancements** (current): ✅ export · ⏳ search · ⏳ analytics · ✅ **Voice L2 host-led panel** (functionally complete; persistence pending)
 
 ## Open links
 - [[02 — Backend/Backend Overview]] · [[03 — Memory Layer/Memory Layer Overview]] · [[05 — Frontend/Frontend Overview]]

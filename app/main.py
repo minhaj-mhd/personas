@@ -1,4 +1,16 @@
 import os
+import sys
+
+# Force stdout/stderr to UTF-8 so logging never crashes on non-Latin text. On Windows the
+# console defaults to cp1252, which cannot encode characters like CJK or emoji — and Gemini
+# Live transcripts contain them. An unencodable print() would otherwise raise
+# UnicodeEncodeError and tear down the live WebSocket mid-conversation.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 from fastapi import FastAPI, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -72,10 +84,14 @@ from app.api.personas import router as personas_api_router  # noqa: E402
 from app.api.conversations import router as conversations_api_router  # noqa: E402
 from app.api.voice_ws import router as voice_ws_router  # noqa: E402
 from app.api.live_ws import router as live_ws_router  # noqa: E402
+from app.api.panel_ws import router as panel_ws_router  # noqa: E402
+from app.api.analytics import router as analytics_router  # noqa: E402
 from app.web.views import router as web_views_router  # noqa: E402
 
 app.include_router(personas_api_router)
 app.include_router(conversations_api_router)
 app.include_router(voice_ws_router)
 app.include_router(live_ws_router)
+app.include_router(panel_ws_router)
+app.include_router(analytics_router)
 app.include_router(web_views_router)

@@ -2,7 +2,7 @@
 title: "Welcome — Persona Platform Dev Memory"
 type: index
 status: active
-updated: 2026-06-17
+updated: 2026-06-25
 ---
 
 # 🧭 Welcome — Development Memory Vault
@@ -24,13 +24,14 @@ This Obsidian vault is the **coding agent's cross-session memory** for the **AI 
 | **02 — Backend** | FastAPI app, Database schemas, REST + WebSocket | [[02 — Backend/Backend Overview]] |
 | **03 — Memory Layer** | Short-term window, Rolling summaries, Semantic RAG | [[03 — Memory Layer/Memory Layer Overview]] · [[03 — Memory Layer/How RAG and Persistent Memory Work\|How RAG & Memory Work]] |
 | **04 — Personas** | System-prompt template, Built-in + Custom catalogs | [[04 — Personas/Persona Catalog]] |
-| **05 — Frontend** | Jinja2 templates, HTMX fragments, ws.js client | [[05 — Frontend/Frontend Overview]] |
+| **05 — Frontend** | Jinja2 + HTMX, voice clients (ws.js / live.js / panel.js) | [[05 — Frontend/Frontend Overview]] · [[05 — Frontend/Live Voice Session]] |
 | **06 — Logs** | Active focus, Concluded conversation threads, Daily logs | [[06 — Logs/Current Context]] |
 | **09 — Archive** | Superseded designs and retired decisions | [[09 — Archive/Archive Index]] |
 
 ---
 
 ## 🚦 Current Status
-- **Phase**: Phase 3 — Memory Layer & RAG (Completed & Fully Documented).
-- **Core Proof**: Automated cross-session resume-recall integration tests are fully passing.
-- **Next**: Phase 4 — Voice integration (Browser-based STT & TTS).
+- **Phases 0–4 shipped**: Persona CRUD → Text streaming chat → Memory Layer & RAG → Voice (V1 + **Live L1**).
+- **Memory layer** fully implemented; backends migrated to local **Ollama** (`nomic-embed-text` + `qwen3:8b`).
+- **Phase 5 (current)**: ✅ Markdown export · ✅ **Voice L2 host-led multi-agent panel** (`/panel`, working) · ⏳ search · ⏳ analytics.
+- **Next**: finish search/analytics + panel persistence (P-5). See [[06 — Logs/Current Context]].

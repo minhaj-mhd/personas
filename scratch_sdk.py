@@ -1,14 +1,18 @@
 import os
 import sys
-# Make sure we can import google.genai
+from dotenv import load_dotenv
+
+load_dotenv(".env")
+api_key = os.getenv("GEMINI_API_KEY")
+
 try:
     from google import genai
-    from google.genai import types
-    print("Has Behavior in types?", hasattr(types, "Behavior"))
-    if hasattr(types, "FunctionDeclaration"):
-        import inspect
-        print("FunctionDeclaration sig:", inspect.signature(types.FunctionDeclaration))
-    if hasattr(types, "Tool"):
-        print("Tool sig:", inspect.signature(types.Tool))
+    client = genai.Client(api_key=api_key)
+    
+    print("Listing Models...")
+    for model in client.models.list():
+        name = model.name
+        if "gemini" in name:
+            print(name)
 except Exception as e:
     print("Error:", e)

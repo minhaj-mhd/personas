@@ -45,11 +45,49 @@ def recall_memory_declaration() -> types.FunctionDeclaration:
     )
 
 
+def route_to_agent_declaration() -> types.FunctionDeclaration:
+    """Tool the host/agents call to hand the live floor to another panelist. Robust to
+    mispronounced/abbreviated names because the model resolves the intent, not a regex."""
+    return types.FunctionDeclaration(
+        name="route_to_agent",
+        description=(
+            "Hand the live conversation over to another panelist. Call this the moment the user "
+            "asks to speak with, or directs their question to, a specific panelist by name — even "
+            "if the name is abbreviated or slightly mispronounced."
+        ),
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "agent_name": types.Schema(
+                    type=types.Type.STRING,
+                    description="The panelist to switch to, e.g. 'Alistair' or 'Elena'.",
+                )
+            },
+            required=["agent_name"],
+        ),
+    )
+
+
+def _transcription_config() -> types.AudioTranscriptionConfig:
+    """Pin transcription language when LIVE_LANGUAGE is set, else auto-detect."""
+    lang = getattr(settings, "LIVE_LANGUAGE", "") or ""
+    if lang:
+        return types.AudioTranscriptionConfig(language_codes=[lang])
+    return types.AudioTranscriptionConfig()
+
+
 def build_live_config(
-    system_instruction: str, voice: str, temperature: float, enable_search: bool
+    system_instruction: str,
+    voice: str,
+    temperature: float,
+    enable_search: bool,
+    routing: bool = False,
 ) -> types.LiveConnectConfig:
 
-    tools = [types.Tool(function_declarations=[recall_memory_declaration()])]
+    fns = [recall_memory_declaration()]
+    if routing:
+        fns.append(route_to_agent_declaration())
+    tools = [types.Tool(function_declarations=fns)]
     if enable_search:
         tools.append(types.Tool(google_search=types.GoogleSearch()))
 
@@ -65,8 +103,8 @@ def build_live_config(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
             )
         ),
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
+        input_audio_transcription=_transcription_config(),
+        output_audio_transcription=_transcription_config(),
         session_resumption=types.SessionResumptionConfig(),
         context_window_compression=types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow()

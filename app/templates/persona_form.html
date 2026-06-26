@@ -82,18 +82,20 @@
 
                 <!-- Voice -->
                 <div class="space-y-1.5">
-                    <label for="voice" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Voice ID / Provider Voice</label>
-                    <select 
-                        id="voice" 
-                        name="voice" 
+                    <label for="voice" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Voice (Gemini Live)</label>
+                    <select
+                        id="voice"
+                        name="voice"
                         class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors"
                     >
-                        <option value="en-US-Neural2-F" {% if persona and persona.voice == 'en-US-Neural2-F' %}selected{% endif %}>Female A (en-US-Neural2-F)</option>
-                        <option value="en-US-Neural2-C" {% if persona and persona.voice == 'en-US-Neural2-C' %}selected{% endif %}>Female B (en-US-Neural2-C)</option>
-                        <option value="en-US-Neural2-J" {% if persona and persona.voice == 'en-US-Neural2-J' %}selected{% endif %}>Male A (en-US-Neural2-J)</option>
-                        <option value="en-US-Neural2-B" {% if persona and persona.voice == 'en-US-Neural2-B' %}selected{% endif %}>Male B (en-US-Neural2-B)</option>
-                        <option value="en-GB-Neural2-D" {% if persona and persona.voice == 'en-GB-Neural2-D' %}selected{% endif %}>British Male (en-GB-Neural2-D)</option>
-                        <option value="en-AU-Neural2-B" {% if persona and persona.voice == 'en-AU-Neural2-B' %}selected{% endif %}>Australian Male (en-AU-Neural2-B)</option>
+                        <option value="Puck" {% if not persona or persona.voice == 'Puck' %}selected{% endif %}>Puck — Upbeat (♂)</option>
+                        <option value="Charon" {% if persona and persona.voice == 'Charon' %}selected{% endif %}>Charon — Deep, informative (♂)</option>
+                        <option value="Fenrir" {% if persona and persona.voice == 'Fenrir' %}selected{% endif %}>Fenrir — Dynamic, excitable (♂)</option>
+                        <option value="Orus" {% if persona and persona.voice == 'Orus' %}selected{% endif %}>Orus — Firm (♂)</option>
+                        <option value="Aoede" {% if persona and persona.voice == 'Aoede' %}selected{% endif %}>Aoede — Breezy, warm (♀)</option>
+                        <option value="Kore" {% if persona and persona.voice == 'Kore' %}selected{% endif %}>Kore — Firm (♀)</option>
+                        <option value="Leda" {% if persona and persona.voice == 'Leda' %}selected{% endif %}>Leda — Gentle, youthful (♀)</option>
+                        <option value="Zephyr" {% if persona and persona.voice == 'Zephyr' %}selected{% endif %}>Zephyr — Bright (♀)</option>
                     </select>
                 </div>
             </div>

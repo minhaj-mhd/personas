@@ -23,7 +23,7 @@ async def clean_custom_personas(session):
     Runs inside the active test's event loop.
     """
     try:
-        await session.execute(delete(Persona).where(not Persona.is_builtin))
+        await session.execute(delete(Persona).where(Persona.is_builtin == False))
         await session.commit()
     except Exception:
         await session.rollback()

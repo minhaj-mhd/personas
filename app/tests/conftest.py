@@ -30,7 +30,7 @@ async def clean_database_before_tests():
     """
     async with async_session_maker() as session:
         try:
-            await session.execute(delete(Persona).where(not Persona.is_builtin))
+            await session.execute(delete(Persona).where(Persona.is_builtin == False))
             await session.commit()
             print("\nCleaned up legacy custom personas before starting tests.")
         except Exception as e:

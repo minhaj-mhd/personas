@@ -2,8 +2,8 @@ import uuid
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import select
-from google import genai
-from google.genai import types
+import re
+import httpx
 from pydantic import BaseModel
 from app.db import async_session_maker
 from app.models.conversation import Conversation
@@ -22,8 +22,8 @@ class SummaryOutput(BaseModel):
 
 class SummarizerService:
     def __init__(self):
-        # Initialize Google GenAI client
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+        self.model = settings.OLLAMA_SUMMARY_MODEL
         self.embeddings_service = EmbeddingsService()
 
     async def maybe_summarize(
@@ -93,19 +93,25 @@ class SummarizerService:
             )
 
             try:
-                # Request structured JSON response from Gemini
-                response = await self.client.aio.models.generate_content(
-                    model=settings.SUMMARY_MODEL,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=SummaryOutput,
-                        temperature=0.2,
-                    ),
-                )
+                # Request structured JSON response from Ollama
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/api/chat",
+                        json={
+                            "model": self.model,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "format": SummaryOutput.model_json_schema(),
+                            "stream": False,
+                            "think": False,
+                            "options": {"temperature": 0.2},
+                        },
+                    )
+                    resp.raise_for_status()
+                    content = resp.json()["message"]["content"]
 
-                # Parse and validate output
-                result = SummaryOutput.model_validate_json(response.text)
+                # Safety net if an Ollama version ignores think:false
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                result = SummaryOutput.model_validate_json(content)
 
                 # 5. Add the new narrative summary to memories table
                 new_summary_mem = Memory(

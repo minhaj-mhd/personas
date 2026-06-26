@@ -33,6 +33,26 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.get("/panel", response_class=HTMLResponse)
+async def panel_view(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Renders the multi-agent voice panel: pick a roster, a host greets you, then call agents by
+    name to hand off the floor. A fresh session id is used for per-persona memory scoping.
+    """
+    stmt = select(Persona).order_by(Persona.is_builtin.desc(), Persona.created_at.desc())
+    result = await db.execute(stmt)
+    personas = result.scalars().all()
+    return templates.TemplateResponse(
+        request=request,
+        name="panel.html",
+        context={
+            "title": "Voice Panel — Aura",
+            "personas": personas,
+            "session_id": uuid.uuid4(),
+        },
+    )
+
+
 @router.get("/personas/new", response_class=HTMLResponse)
 async def new_persona_form(request: Request):
     """
