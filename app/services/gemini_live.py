@@ -69,10 +69,12 @@ def route_to_agent_declaration() -> types.FunctionDeclaration:
 
 
 def _transcription_config() -> types.AudioTranscriptionConfig:
-    """Pin transcription language when LIVE_LANGUAGE is set, else auto-detect."""
-    lang = getattr(settings, "LIVE_LANGUAGE", "") or ""
-    if lang:
-        return types.AudioTranscriptionConfig(language_codes=[lang])
+    """Plain transcription config (auto-detect language).
+
+    NOTE: `language_codes` is ONLY supported on the Gemini Enterprise Agent Platform, NOT the
+    Developer API — passing it makes the Live session reject the config and disconnect immediately.
+    So we leave language auto-detection on. (`LIVE_LANGUAGE` is retained for future Enterprise use.)
+    """
     return types.AudioTranscriptionConfig()
 
 

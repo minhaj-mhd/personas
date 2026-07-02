@@ -99,7 +99,13 @@ then the larger multi-agent (LangGraph) + Voice L2 orchestration.
   ([test_analytics.py](file:///c:/Users/loq/Desktop/learn/personas/app/tests/test_analytics.py)); real data: 7 personas / 3 convs / 129 msgs.
 - **✅ Phase 5 enhancements COMPLETE**: export + search + analytics + Voice L2 panel. Only **P-5 panel
   persistence** remains (needs a schema decision: panel_sessions/participants vs reuse messages w/ sender).
-  Large body of work is **uncommitted** — recommend a checkpoint commit.
+- **💾 Committed milestone**: branch `feat/phase5-voice-panel`, commit `320844a` (46 files, +2655/−253).
+- **🐞 REGRESSION + fix (post-commit)**: the English STT pin (`language_codes` on `AudioTranscriptionConfig`)
+  **crashed every Live session** — "language_codes ... only supported in Gemini Enterprise Agent Platform mode,
+  not Developer API mode". Broke BOTH panel and single-agent Live. **Fix**: reverted `_transcription_config()` to
+  plain config (auto-detect); `LIVE_LANGUAGE` kept but marked Enterprise-only/inert
+  ([gemini_live.py](file:///c:/Users/loq/Desktop/learn/personas/app/services/gemini_live.py),
+  [config.py](file:///c:/Users/loq/Desktop/learn/personas/app/config.py)). Verified config builds with `language_codes=None`; server reloaded. **Uncommitted fix** — needs a follow-up commit.
 
 ## 🔗 Core Memory Links
 - [[06 — Logs/Current Context]] · [[03 — Memory Layer/Memory Layer Overview]] · [[05 — Frontend/Voice Session Roadmap — V1 to V5]]

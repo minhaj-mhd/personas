@@ -26,8 +26,9 @@ class Settings(BaseSettings):
     LIVE_VOICE: str = (
         "Puck"  # default prebuilt voice when persona.voice is unset/invalid
     )
-    # Pin the Live STT/response language so short, accented English utterances aren't
-    # auto-detected as Spanish/Portuguese/etc. Set to "" to restore auto-detection.
+    # NOTE: NOT applied on the Gemini Developer API — `language_codes` is Enterprise-only and
+    # crashes the Live session if sent. Retained for a future Enterprise/Vertex path; transcription
+    # currently auto-detects language. (See gemini_live._transcription_config.)
     LIVE_LANGUAGE: str = "en-US"
     LIVE_ENABLE_SEARCH: bool = (
         False  # also expose Google Search grounding in the live session
