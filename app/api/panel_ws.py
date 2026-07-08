@@ -32,6 +32,7 @@ from app.services.gemini_live import (
 )
 from app.services.panel.router import PanelParticipant
 from app.services.panel.session import PanelState, build_agent_priming
+from app.services.panel.persistence import load_panel, append_panel_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Panel WebSocket"])
@@ -51,7 +52,9 @@ def build_host_instruction(roster_names: list[str]) -> str:
     )
 
 
-def build_panel_agent_instruction(base_prompt: str, name: str, other_names: list[str], priming: str) -> str:
+def build_panel_agent_instruction(
+    base_prompt: str, name: str, other_names: list[str], priming: str
+) -> str:
     others = ", ".join(other_names) if other_names else "the other panelists"
     directive = (
         f"You are {name}, a panelist on a live voice panel alongside: {others}. Stay in character "
@@ -69,7 +72,9 @@ def build_panel_agent_instruction(base_prompt: str, name: str, other_names: list
     return "\n\n".join(parts)
 
 
-def resolve_agent_name(requested: str, roster: list[PanelParticipant]) -> PanelParticipant | None:
+def resolve_agent_name(
+    requested: str, roster: list[PanelParticipant]
+) -> PanelParticipant | None:
     """Tolerant match of a model-provided agent name against the roster."""
     if not requested:
         return None
@@ -87,17 +92,27 @@ def resolve_agent_name(requested: str, roster: list[PanelParticipant]) -> PanelP
     return None
 
 
-async def _handle_recall_tool(session, function_calls, persona_id, conversation_id, memory_service):
+async def _handle_recall_tool(
+    session, function_calls, persona_id, conversation_id, memory_service
+):
     responses = []
     for fc in function_calls:
         if fc.name == "recall_memory":
-            query = fc.args.get("query", "") if isinstance(fc.args, dict) else getattr(fc.args, "query", "")
+            query = (
+                fc.args.get("query", "")
+                if isinstance(fc.args, dict)
+                else getattr(fc.args, "query", "")
+            )
             if query:
                 try:
-                    retrieved = await memory_service.retrieve_context(persona_id, conversation_id, query)
+                    retrieved = await memory_service.retrieve_context(
+                        persona_id, conversation_id, query
+                    )
                     fmt = format_retrieved_memories(retrieved)
                     responses.append(
-                        types.FunctionResponse(id=fc.id, name="recall_memory", response={"result": fmt})
+                        types.FunctionResponse(
+                            id=fc.id, name="recall_memory", response={"result": fmt}
+                        )
                     )
                 except Exception as e:
                     logger.error(f"Panel recall_memory failed: {e}")
@@ -108,11 +123,17 @@ async def _handle_recall_tool(session, function_calls, persona_id, conversation_
             logger.error(f"Panel send_tool_response failed: {e}")
 
 
-@router.websocket("/ws/panel/{conversation_id}")
-async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
+@router.websocket("/ws/panel/{panel_id}")
+async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
     await websocket.accept()
     gemini_live = GeminiLiveService()
     memory_service = MemoryService()
+
+    # A saved Panel row means this session is persisted; an ephemeral id (no row)
+    # runs live-only. Either way the roster comes from the select_roster handshake,
+    # falling back to the panel's stored roster if the client sends none.
+    panel = await load_panel(panel_id)
+    persist = panel is not None
 
     # 1. First client message must select the roster.
     try:
@@ -122,15 +143,18 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
         return
 
     if first.get("type") != "select_roster":
-        await websocket.send_json({"type": "error", "detail": "Expected select_roster as first message"})
+        await websocket.send_json(
+            {"type": "error", "detail": "Expected select_roster as first message"}
+        )
         await websocket.close()
         return
 
-    # 2. Load the selected personas.
+    # 2. Load the selected personas (client roster, or the saved panel's roster).
+    requested_ids = first.get("persona_ids") or (panel.persona_ids if panel else [])
     roster: list[PanelParticipant] = []
     persona_map: dict[str, dict] = {}
     async with async_session_maker() as db:
-        for raw in first.get("persona_ids", []):
+        for raw in requested_ids:
             try:
                 p = await db.get(Persona, uuid.UUID(str(raw)))
             except Exception:
@@ -145,14 +169,21 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                 }
 
     if not roster:
-        await websocket.send_json({"type": "error", "detail": "No valid personas in roster"})
+        await websocket.send_json(
+            {"type": "error", "detail": "No valid personas in roster"}
+        )
         await websocket.close()
         return
 
-    state = PanelState(roster=roster, active_id=None)  # active_id None = HOST holds the floor
+    state = PanelState(
+        roster=roster, active_id=None
+    )  # active_id None = HOST holds the floor
     roster_names = [r.name for r in roster]
     await websocket.send_json(
-        {"type": "ready", "roster": [{"persona_id": r.persona_id, "name": r.name} for r in roster]}
+        {
+            "type": "ready",
+            "roster": [{"persona_id": r.persona_id, "name": r.name} for r in roster],
+        }
     )
 
     stop = False
@@ -167,7 +198,7 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
             speaker_name = state.host_name
         else:
             pdata = persona_map[target_id]
-            priming = await build_agent_priming(uuid.UUID(target_id), conversation_id, state)
+            priming = await build_agent_priming(uuid.UUID(target_id), panel_id, state)
             other_names = [r.name for r in roster if r.persona_id != target_id]
             sys_instruct = build_panel_agent_instruction(
                 pdata["system_prompt"], pdata["name"], other_names, priming
@@ -176,8 +207,12 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
             temperature = pdata["temperature"]
             speaker_name = pdata["name"]
 
-        config = build_live_config(sys_instruct, voice, temperature, enable_search=False, routing=True)
-        await websocket.send_json({"type": "active_speaker", "persona_id": target_id, "name": speaker_name})
+        config = build_live_config(
+            sys_instruct, voice, temperature, enable_search=False, routing=True
+        )
+        await websocket.send_json(
+            {"type": "active_speaker", "persona_id": target_id, "name": speaker_name}
+        )
 
         cur_input = ""
         cur_output = ""
@@ -198,15 +233,28 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                                 if in_t and getattr(in_t, "text", ""):
                                     cur_input += in_t.text
                                     await websocket.send_json(
-                                        {"type": "transcript", "speaker": "You", "text": cur_input, "final": False}
+                                        {
+                                            "type": "transcript",
+                                            "speaker": "You",
+                                            "text": cur_input,
+                                            "final": False,
+                                        }
                                     )
                                     # Floor routing: detect if the user named another agent.
                                     decision = state.route(cur_input)
                                     if decision.action == "switch":
                                         state.record_user(cur_input)
+                                        if persist:
+                                            await append_panel_message(
+                                                panel_id, "You", cur_input
+                                            )
                                         state.apply_route(decision)
                                         await websocket.send_json(
-                                            {"type": "handoff", "to_name": decision.target_name, "to_id": decision.target_id}
+                                            {
+                                                "type": "handoff",
+                                                "to_name": decision.target_name,
+                                                "to_id": decision.target_id,
+                                            }
                                         )
                                         return  # close this session; outer loop opens the new one
 
@@ -214,7 +262,12 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                                 if out_t and getattr(out_t, "text", ""):
                                     cur_output += out_t.text
                                     await websocket.send_json(
-                                        {"type": "transcript", "speaker": speaker_name, "text": cur_output, "final": False}
+                                        {
+                                            "type": "transcript",
+                                            "speaker": speaker_name,
+                                            "text": cur_output,
+                                            "final": False,
+                                        }
                                     )
 
                                 if getattr(sc, "interrupted", False):
@@ -223,8 +276,23 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                                 if getattr(sc, "turn_complete", False):
                                     if cur_input.strip():
                                         state.record_user(cur_input)
+                                        if persist:
+                                            await append_panel_message(
+                                                panel_id, "You", cur_input
+                                            )
                                     if cur_output.strip():
                                         state.record_agent(target_id, cur_output)
+                                        if persist:
+                                            await append_panel_message(
+                                                panel_id,
+                                                speaker_name,
+                                                cur_output,
+                                                (
+                                                    uuid.UUID(target_id)
+                                                    if target_id
+                                                    else None
+                                                ),
+                                            )
                                     await websocket.send_json({"type": "turn_complete"})
                                     cur_input = ""
                                     cur_output = ""
@@ -248,16 +316,27 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                                 if recall_fcs:
                                     asyncio.create_task(
                                         _handle_recall_tool(
-                                            session, recall_fcs, uuid.UUID(target_id),
-                                            conversation_id, memory_service,
+                                            session,
+                                            recall_fcs,
+                                            uuid.UUID(target_id),
+                                            panel_id,
+                                            memory_service,
                                         )
                                     )
                                 if switch_to:
                                     if cur_input.strip():
                                         state.record_user(cur_input)
+                                        if persist:
+                                            await append_panel_message(
+                                                panel_id, "You", cur_input
+                                            )
                                     state.active_id = switch_to.persona_id
                                     await websocket.send_json(
-                                        {"type": "handoff", "to_name": switch_to.name, "to_id": switch_to.persona_id}
+                                        {
+                                            "type": "handoff",
+                                            "to_name": switch_to.name,
+                                            "to_id": switch_to.persona_id,
+                                        }
                                     )
                                     return
 
@@ -270,7 +349,10 @@ async def panel_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                             return
                         if message.get("bytes") is not None:
                             await session.send_realtime_input(
-                                audio=types.Blob(data=message["bytes"], mime_type="audio/pcm;rate=16000")
+                                audio=types.Blob(
+                                    data=message["bytes"],
+                                    mime_type="audio/pcm;rate=16000",
+                                )
                             )
                         elif message.get("text") is not None:
                             try:

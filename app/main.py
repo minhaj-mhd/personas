@@ -82,6 +82,7 @@ async def web_health_badge(db: AsyncSession = Depends(get_db)):
 # Import and include routers
 from app.api.personas import router as personas_api_router  # noqa: E402
 from app.api.conversations import router as conversations_api_router  # noqa: E402
+from app.api.panels import router as panels_api_router  # noqa: E402
 from app.api.voice_ws import router as voice_ws_router  # noqa: E402
 from app.api.live_ws import router as live_ws_router  # noqa: E402
 from app.api.panel_ws import router as panel_ws_router  # noqa: E402
@@ -90,6 +91,7 @@ from app.web.views import router as web_views_router  # noqa: E402
 
 app.include_router(personas_api_router)
 app.include_router(conversations_api_router)
+app.include_router(panels_api_router)
 app.include_router(voice_ws_router)
 app.include_router(live_ws_router)
 app.include_router(panel_ws_router)
