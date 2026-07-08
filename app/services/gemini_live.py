@@ -15,11 +15,15 @@ except Exception:  # pragma: no cover
     _WSConnectionClosed = ()
 
 # WebSocket close codes / message markers that indicate a transient, resumable upstream
-# drop (vs. a deliberate, fatal close such as bad-auth or exhausted-quota).
-_RECOVERABLE_WS_CODES = {1001, 1006, 1011, 1012, 1013}
+# drop (vs. a deliberate, fatal close such as bad-auth or exhausted-quota). 1008 is the
+# Live API's session-duration limit: it sends a GoAway then closes with 1008 — the exact
+# case session resumption exists to continue through.
+_RECOVERABLE_WS_CODES = {1001, 1006, 1008, 1011, 1012, 1013}
 _RECOVERABLE_MARKERS = (
     "abnormal closure",
     "going away",
+    "goaway",  # Live API "GoAway" — emitted as the session-duration limit approaches
+    "session duration",
     "keepalive ping timeout",
     "connection closed",
     "try again",
@@ -30,12 +34,14 @@ _RECOVERABLE_MARKERS = (
 
 def recoverable_disconnect(exc: BaseException) -> bool:
     """True if `exc` looks like a transient upstream Live-connection drop we can resume
-    from via session resumption (a 1006/abnormal close, going-away, keepalive timeout,
-    etc.) rather than a fatal error (bad model, bad auth, exhausted quota).
+    from via session resumption (a 1006/abnormal close, a 1008 GoAway/session-duration
+    limit, going-away, keepalive timeout, etc.) rather than a fatal error (bad model, bad
+    auth, exhausted quota).
 
-    The failure this exists for surfaces from google-genai as
-    ``APIError('1006 None. abnormal closure [internal]')`` — matched here both by the
-    "abnormal closure" marker and by the leading WS close code."""
+    The failures this exists for surface from google-genai as e.g.
+    ``APIError('1006 None. abnormal closure [internal]')`` or ``APIError('1008 None.
+    Connection aborted ... after receiving a GoAway signal once the session duration
+    ...')`` — matched here by the message markers and/or the leading WS close code."""
     if _WSConnectionClosed and isinstance(exc, _WSConnectionClosed):
         return True
     msg = str(exc).lower()

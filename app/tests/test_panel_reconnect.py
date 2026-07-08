@@ -118,7 +118,12 @@ async def test_panel_resumes_after_1006(db_session):
         handle_msg = SimpleNamespace(
             session_resumption_update=SimpleNamespace(new_handle="H-1")
         )
-        drop = Exception("1006 None. abnormal closure [internal]")
+        # The exact failure reported in the field: the session-duration GoAway/1008.
+        drop = Exception(
+            "1008 None. Connection aborted because the client failed to close the "
+            "connection after receiving a GoAway signal once the session duration "
+            "limit was reached"
+        )
         s1 = _FakeSession(turns=[[handle_msg], drop])
         s2 = _FakeSession(turns=[])
         sessions = [s1, s2]

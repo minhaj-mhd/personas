@@ -75,6 +75,14 @@ def test_recoverable_disconnect_classifier():
     assert recoverable_disconnect(
         Exception("1006 None. abnormal closure [internal]")
     )
+    # The session-duration limit: a GoAway then a 1008 close — resume, don't crash.
+    assert recoverable_disconnect(
+        Exception(
+            "1008 None. Connection aborted because the client failed to close the "
+            "connection after receiving a GoAway signal once the session duration "
+            "limit was reached"
+        )
+    )
     # Other transient upstream drops.
     assert recoverable_disconnect(Exception("1011 keepalive ping timeout"))
     assert recoverable_disconnect(Exception("1001 going away"))
