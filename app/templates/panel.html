@@ -231,23 +231,30 @@
 
     const addSelect = document.getElementById('add-agent-select');
     const addBtn = document.getElementById('add-agent-btn');
-    if (addBtn && addSelect) {
-        addBtn.addEventListener('click', async () => {
-            const personaId = addSelect.value;
-            if (!personaId) return;
-            const resp = await fetch(panelBase + '/members', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ persona_id: personaId }),
-            });
-            if (!resp.ok) {
-                let detail = 'Could not add the agent.';
-                try { detail = (await resp.json()).detail || detail; } catch (e) {}
-                alert(detail);
-                return;
-            }
-            window.location.reload();
+
+    async function addAgent(personaId) {
+        if (!personaId) return;
+        const resp = await fetch(panelBase + '/members', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ persona_id: personaId }),
         });
+        if (!resp.ok) {
+            let detail = 'Could not add the agent.';
+            try { detail = (await resp.json()).detail || detail; } catch (e) {}
+            alert(detail);
+            if (addSelect) addSelect.value = '';
+            return;
+        }
+        window.location.reload();
+    }
+
+    // Add as soon as an agent is picked (the + button is a fallback trigger).
+    if (addSelect) {
+        addSelect.addEventListener('change', () => addAgent(addSelect.value));
+    }
+    if (addBtn && addSelect) {
+        addBtn.addEventListener('click', () => addAgent(addSelect.value));
     }
 })();
 </script>
