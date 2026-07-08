@@ -3,6 +3,7 @@ from app.services.gemini_live import (
     resolve_voice,
     recall_memory_declaration,
     build_live_config,
+    recoverable_disconnect,
 )
 from app.services.prompt_builder import format_retrieved_memories
 from app.config import settings
@@ -56,6 +57,38 @@ def test_build_live_config():
     config_with_search = build_live_config(system_instruction, voice, temperature, True)
     assert len(config_with_search.tools) == 2
     assert config_with_search.tools[1].google_search is not None
+
+
+def test_build_live_config_resumption_handle():
+    # A fresh session has resumption enabled but no handle.
+    fresh = build_live_config("sys", "Puck", 0.5, False)
+    assert fresh.session_resumption is not None
+    assert fresh.session_resumption.handle is None
+
+    # On reconnect the handle is threaded through so the Live server resumes the session.
+    resumed = build_live_config("sys", "Puck", 0.5, False, resumption_handle="H-123")
+    assert resumed.session_resumption.handle == "H-123"
+
+
+def test_recoverable_disconnect_classifier():
+    # The exact failure we resume from: google-genai wraps a 1006 close like this.
+    assert recoverable_disconnect(
+        Exception("1006 None. abnormal closure [internal]")
+    )
+    # Other transient upstream drops.
+    assert recoverable_disconnect(Exception("1011 keepalive ping timeout"))
+    assert recoverable_disconnect(Exception("1001 going away"))
+
+    # An error carrying a numeric close-code attribute is honoured too.
+    class Closed(Exception):
+        code = 1006
+
+    assert recoverable_disconnect(Closed("connection dropped"))
+
+    # Fatal errors must NOT be retried (that would loop on a permanent failure).
+    assert not recoverable_disconnect(Exception("401 Unauthorized: invalid API key"))
+    assert not recoverable_disconnect(Exception("404 model not found"))
+    assert not recoverable_disconnect(Exception("429 RESOURCE_EXHAUSTED: quota"))
 
 
 def test_format_retrieved_memories():

@@ -53,6 +53,18 @@ class PanelAudioClient extends LiveAudioClient {
             case "turn_complete":
                 if (this.onTurnComplete) this.onTurnComplete();
                 break;
+            case "reconnecting":
+                // Upstream Live connection dropped; the server is resuming the current
+                // speaker under the same WebSocket. Drop stale playback; leave the mic/
+                // audio pipeline running (do NOT call startAudioIOLoop again).
+                console.warn(`Panel connection dropped; resuming (attempt ${msg.attempt || 1})...`);
+                this.flushPlayback();
+                if (this.onStatus) this.onStatus("connecting", "Reconnecting…");
+                break;
+            case "resumed":
+                console.log("Panel session resumed.");
+                if (this.onStatus) this.onStatus("live", "");
+                break;
             case "error":
                 console.error("Panel server error:", msg.detail);
                 if (this.onStatus) this.onStatus("error", msg.detail);

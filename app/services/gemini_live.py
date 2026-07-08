@@ -9,6 +9,48 @@ logger = logging.getLogger(__name__)
 VALID_VOICES = {"Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr"}
 
 
+try:  # websockets ships as a google-genai dependency; guard so its absence is non-fatal.
+    from websockets.exceptions import ConnectionClosed as _WSConnectionClosed
+except Exception:  # pragma: no cover
+    _WSConnectionClosed = ()
+
+# WebSocket close codes / message markers that indicate a transient, resumable upstream
+# drop (vs. a deliberate, fatal close such as bad-auth or exhausted-quota).
+_RECOVERABLE_WS_CODES = {1001, 1006, 1011, 1012, 1013}
+_RECOVERABLE_MARKERS = (
+    "abnormal closure",
+    "going away",
+    "keepalive ping timeout",
+    "connection closed",
+    "try again",
+    "service is currently unavailable",
+    "internal error",
+)
+
+
+def recoverable_disconnect(exc: BaseException) -> bool:
+    """True if `exc` looks like a transient upstream Live-connection drop we can resume
+    from via session resumption (a 1006/abnormal close, going-away, keepalive timeout,
+    etc.) rather than a fatal error (bad model, bad auth, exhausted quota).
+
+    The failure this exists for surfaces from google-genai as
+    ``APIError('1006 None. abnormal closure [internal]')`` — matched here both by the
+    "abnormal closure" marker and by the leading WS close code."""
+    if _WSConnectionClosed and isinstance(exc, _WSConnectionClosed):
+        return True
+    msg = str(exc).lower()
+    if any(m in msg for m in _RECOVERABLE_MARKERS):
+        return True
+    code = getattr(exc, "code", None)
+    if isinstance(code, int) and code in _RECOVERABLE_WS_CODES:
+        return True
+    # google-genai's live wrapper prefixes the message with the WS close code.
+    first = msg.split(" ", 1)[0].strip(".:")
+    if first.isdigit() and int(first) in _RECOVERABLE_WS_CODES:
+        return True
+    return False
+
+
 def resolve_voice(persona_voice: str | None) -> str:
     if persona_voice and persona_voice in VALID_VOICES:
         return persona_voice
@@ -87,6 +129,7 @@ def build_live_config(
     enable_search: bool,
     routing: bool = False,
     extra_function_declarations: list[types.FunctionDeclaration] | None = None,
+    resumption_handle: str | None = None,
 ) -> types.LiveConnectConfig:
 
     fns = [recall_memory_declaration()]
@@ -113,7 +156,9 @@ def build_live_config(
         ),
         input_audio_transcription=_transcription_config(),
         output_audio_transcription=_transcription_config(),
-        session_resumption=types.SessionResumptionConfig(),
+        # `handle` is None on a fresh session and set on reconnect so the Live server
+        # continues the SAME logical session after a transport drop (e.g. a 1006 close).
+        session_resumption=types.SessionResumptionConfig(handle=resumption_handle),
         context_window_compression=types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow()
         ),

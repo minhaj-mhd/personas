@@ -13,6 +13,7 @@ session. See [[Master Plan — Voice Panel (Host-Led, Subagent-Ready)]].
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -31,6 +32,7 @@ from app.services.gemini_live import (
     build_live_config,
     prime_session_with_images,
     send_image_frame,
+    recoverable_disconnect,
 )
 from app.services.assets import get_scope_images
 from app.services.mcp.client import build_sheets_provider
@@ -239,24 +241,48 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
 
     stop = False
 
-    # 3. Outer loop — one Live session at a time (host, then whichever agent is named).
+    # Per-speaker session-resumption state. `reconnecting` distinguishes RESUMING the
+    # same speaker after a transient upstream drop (keep the handle, skip re-announcing)
+    # from opening a NEW speaker after a handoff. A drop resumes; a handoff starts fresh.
+    resumption_handle = None
+    reconnect_attempts = 0
+    reconnecting = False
+    MAX_RECONNECTS = 5
+
+    # 3. Outer loop — one Live session at a time (host, then whichever agent is named,
+    # and also each resume of the current speaker after a recoverable drop).
     while not stop:
         target_id = state.active_id  # None => host
-        if target_id is None:
-            sys_instruct = build_host_instruction(roster_names)
-            voice = resolve_voice(settings.LIVE_VOICE)
-            temperature = 0.7
-            speaker_name = state.host_name
-        else:
-            pdata = persona_map[target_id]
-            priming = await build_agent_priming(uuid.UUID(target_id), panel_id, state)
-            other_names = [r.name for r in roster if r.persona_id != target_id]
-            sys_instruct = build_panel_agent_instruction(
-                pdata["system_prompt"], pdata["name"], other_names, priming
+        if not reconnecting:
+            # A new speaker holds the floor: reset resumption and (re)build their config.
+            resumption_handle = None
+            reconnect_attempts = 0
+            cur_input = ""
+            cur_output = ""
+            if target_id is None:
+                sys_instruct = build_host_instruction(roster_names)
+                voice = resolve_voice(settings.LIVE_VOICE)
+                temperature = 0.7
+                speaker_name = state.host_name
+            else:
+                pdata = persona_map[target_id]
+                priming = await build_agent_priming(
+                    uuid.UUID(target_id), panel_id, state
+                )
+                other_names = [r.name for r in roster if r.persona_id != target_id]
+                sys_instruct = build_panel_agent_instruction(
+                    pdata["system_prompt"], pdata["name"], other_names, priming
+                )
+                voice = resolve_voice(pdata["voice"])
+                temperature = pdata["temperature"]
+                speaker_name = pdata["name"]
+            await websocket.send_json(
+                {
+                    "type": "active_speaker",
+                    "persona_id": target_id,
+                    "name": speaker_name,
+                }
             )
-            voice = resolve_voice(pdata["voice"])
-            temperature = pdata["temperature"]
-            speaker_name = pdata["name"]
 
         config = build_live_config(
             sys_instruct,
@@ -265,26 +291,41 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
             enable_search=False,
             routing=True,
             extra_function_declarations=mcp_declarations,
-        )
-        await websocket.send_json(
-            {"type": "active_speaker", "persona_id": target_id, "name": speaker_name}
+            resumption_handle=resumption_handle,
         )
 
-        cur_input = ""
-        cur_output = ""
+        switched = False  # floor handed to another panelist
+        dropped = False  # recoverable upstream drop -> resume the same speaker
+        fatal = None
 
         try:
             async with gemini_live.connect(config) as session:
-                # Prime this speaker's session with the panel's reference images.
-                try:
-                    await prime_session_with_images(session, panel_images)
-                except Exception as e:
-                    logger.error(f"Panel image priming failed: {e}")
+                if reconnecting:
+                    # Resumed session — the client audio pipeline is still running.
+                    with contextlib.suppress(Exception):
+                        await websocket.send_json(
+                            {"type": "resumed", "name": speaker_name}
+                        )
+                    print("[PANEL] session RESUMED", flush=True)
+                else:
+                    # Prime this speaker's session with the panel's reference images.
+                    try:
+                        await prime_session_with_images(session, panel_images)
+                    except Exception as e:
+                        logger.error(f"Panel image priming failed: {e}")
 
                 async def downlink():
                     nonlocal cur_input, cur_output, stop
+                    nonlocal resumption_handle, reconnect_attempts
                     while True:
                         async for resp in session.receive():
+                            # Capture the resumption handle; a fresh one also means the
+                            # session is healthy, so reset the reconnect budget.
+                            sru = getattr(resp, "session_resumption_update", None)
+                            if sru is not None and getattr(sru, "new_handle", None):
+                                resumption_handle = sru.new_handle
+                                reconnect_attempts = 0
+
                             if getattr(resp, "data", None):
                                 await websocket.send_bytes(resp.data)
 
@@ -446,20 +487,78 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
                 )
                 for p in pending:
                     p.cancel()
+                    with contextlib.suppress(BaseException):
+                        await p
                 for d in done:
                     exc = d.exception()
-                    if exc and not isinstance(exc, asyncio.CancelledError):
-                        raise exc
+                    if exc is None:
+                        if d is down_task:
+                            # downlink returns only to hand the floor to another agent.
+                            switched = True
+                        # up_task returning has already set `stop` via nonlocal.
+                    elif recoverable_disconnect(exc):
+                        dropped = True
+                    else:
+                        fatal = exc
+                if fatal is not None:
+                    raise fatal
 
         except WebSocketDisconnect:
             stop = True
+            break
         except Exception as e:
-            logger.error(f"Panel session error: {e}")
+            # A recoverable upstream drop (e.g. a 1006) resumes below; anything else is
+            # fatal and ends the panel.
+            if recoverable_disconnect(e):
+                dropped = True
+            else:
+                logger.error(f"Panel session error: {e}")
+                with contextlib.suppress(Exception):
+                    await websocket.send_json({"type": "error", "detail": str(e)})
+                stop = True
+                break
+
+        # Decide what the just-ended session means for the outer loop.
+        if stop:
+            break
+        if switched:
+            reconnecting = False
+            continue  # open the newly-named speaker's session
+        if dropped:
+            # Resume the SAME speaker if we captured a handle and have budget left.
+            if resumption_handle is None or reconnect_attempts >= MAX_RECONNECTS:
+                logger.error(
+                    f"Panel giving up after {reconnect_attempts} reconnect(s) "
+                    f"(handle={'yes' if resumption_handle else 'no'})"
+                )
+                with contextlib.suppress(Exception):
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "detail": "Live connection was lost and could not be resumed.",
+                        }
+                    )
+                stop = True
+                break
+            reconnect_attempts += 1
+            delay = min(0.5 * (2 ** (reconnect_attempts - 1)), 5.0)
+            print(
+                f"[PANEL] reconnecting {speaker_name} "
+                f"(attempt {reconnect_attempts}/{MAX_RECONNECTS}) in {delay:.1f}s",
+                flush=True,
+            )
             try:
-                await websocket.send_json({"type": "error", "detail": str(e)})
+                await websocket.send_json(
+                    {"type": "reconnecting", "attempt": reconnect_attempts}
+                )
             except Exception:
-                pass
-            stop = True
+                stop = True
+                break
+            await asyncio.sleep(delay)
+            reconnecting = True
+            continue
+        # No handoff, no drop, no stop — shouldn't happen; break to avoid a busy loop.
+        break
 
     # Clean up the MCP server process, if one was started for this panel.
     if mcp_stack is not None:

@@ -249,6 +249,18 @@ class LiveAudioClient {
         if (msg.type === "ready") {
             if (this.onStatus) this.onStatus("live", msg.voice || "");
             this.startAudioIOLoop();
+        } else if (msg.type === "reconnecting") {
+            // Upstream Live connection dropped; the server is resuming it under the same
+            // WebSocket. Drop any stale scheduled audio and show a transient status. Do
+            // NOT touch the mic/audio pipeline — it stays running across the resume.
+            console.warn(`Live connection dropped; resuming (attempt ${msg.attempt || 1})...`);
+            this.flushPlayback();
+            if (this.onStatus) this.onStatus("connecting", "Reconnecting…");
+        } else if (msg.type === "resumed") {
+            // Session resumed successfully. The audio loop is already running, so just
+            // restore the live status — must NOT call startAudioIOLoop() again.
+            console.log("Live session resumed.");
+            if (this.onStatus) this.onStatus("live", msg.voice || "");
         } else if (msg.type === "input_transcript") {
             if (this.onInputTranscript) this.onInputTranscript(msg.text, msg.final);
         } else if (msg.type === "output_transcript") {
