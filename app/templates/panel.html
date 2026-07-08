@@ -5,56 +5,59 @@
     <!-- Header -->
     <div class="flex items-center justify-between border-b border-slate-900 pb-4">
         <div class="flex items-center gap-3">
-            <a href="/" class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-all">
+            <a href="/panels" class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-all">
                 <i class="fa-solid fa-arrow-left text-sm"></i>
             </a>
-            <h1 class="font-outfit font-extrabold text-xl text-slate-100">🎛️ Voice Panel</h1>
+            <h1 class="font-outfit font-extrabold text-xl text-slate-100 truncate">🎛️ {{ panel.name }}</h1>
             <span id="panel-status" class="text-xs font-mono text-slate-400">idle</span>
         </div>
     </div>
 
-    <!-- Roster picker -->
-    <div id="roster-picker" class="space-y-4">
-        <p class="text-sm text-slate-400 font-light">
-            Pick the agents for your panel, then start. A <strong class="text-slate-200">host</strong> greets you;
-            say an agent's name (e.g. "I'd like to talk to {{ personas[0].name if personas else 'Alistair' }}") to hand the floor to them.
-            <span class="text-amber-400/80">Use headphones</span> — echo cancellation is unavailable on most setups.
-        </p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {% for p in personas %}
-            <label class="flex items-center gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:border-brand-500/50 transition-all">
-                <input type="checkbox" class="panel-persona w-4 h-4 accent-brand-500" value="{{ p.id }}" data-name="{{ p.name }}">
-                <div class="min-w-0">
-                    <div class="text-sm font-semibold text-slate-100 truncate">{{ p.name }}</div>
-                    <div class="text-xs text-slate-500 truncate">{{ p.description or '' }}</div>
-                </div>
-            </label>
-            {% endfor %}
-        </div>
-        <button id="start-panel" class="px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-semibold shadow-lg transition-all active:scale-[0.98]">
-            <i class="fa-solid fa-headset text-xs mr-1.5"></i> Start Panel
-        </button>
+    <!-- Roster chips (fixed for this saved panel) -->
+    <div class="flex flex-wrap gap-2">
+        {% for p in roster %}
+        <span class="text-xs font-mono px-2.5 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300">
+            <i class="fa-solid fa-user-astronaut text-[10px] text-brand-400 mr-1"></i>{{ p.name }}
+        </span>
+        {% endfor %}
     </div>
 
-    <!-- Live panel -->
-    <div id="panel-live" class="hidden space-y-4">
-        <div class="flex items-center justify-between">
-            <div>
-                <div class="text-[10px] uppercase tracking-wider text-slate-500 font-mono">Now speaking</div>
-                <div id="active-speaker" class="text-lg font-bold text-brand-400">Host</div>
-            </div>
-            <button id="stop-panel" class="px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/25 text-sm font-semibold transition-all">
-                <i class="fa-solid fa-stop text-[10px] mr-1"></i> End Panel
+    <!-- Controls -->
+    <div class="flex items-center justify-between">
+        <div>
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-mono">Now speaking</div>
+            <div id="active-speaker" class="text-lg font-bold text-brand-400">—</div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="start-panel" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white text-sm font-semibold shadow-lg transition-all active:scale-[0.98]">
+                <i class="fa-solid fa-headset text-xs mr-1"></i> Start
+            </button>
+            <button id="stop-panel" class="hidden px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/25 text-sm font-semibold transition-all">
+                <i class="fa-solid fa-stop text-[10px] mr-1"></i> End
             </button>
         </div>
-        <div id="panel-transcript" class="glass-panel rounded-2xl p-4 h-[50vh] overflow-y-auto space-y-2 text-sm leading-relaxed"></div>
+    </div>
+
+    <!-- Transcript (persisted history + live turns) -->
+    <div id="panel-transcript" class="glass-panel rounded-2xl p-4 h-[55vh] overflow-y-auto space-y-2 text-sm leading-relaxed">
+        {% for m in messages %}
+        <div>
+            <span class="font-semibold {% if m.speaker == 'You' %}text-slate-300{% else %}text-brand-400{% endif %}">{{ m.speaker }}:</span>
+            <span class="text-slate-200">{{ m.content }}</span>
+        </div>
+        {% else %}
+        <p id="empty-transcript" class="text-xs text-slate-500 italic">No conversation yet. Press Start and greet the host.</p>
+        {% endfor %}
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    window.panelConfig = { sessionId: "{{ session_id }}" };
+    window.panelConfig = {
+        panelId: "{{ panel.id }}",
+        personaIds: [{% for p in roster %}"{{ p.id }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+    };
 </script>
 <script src="/static/js/live.js"></script>
 <script src="/static/js/panel.js"></script>
@@ -62,16 +65,16 @@
 (function () {
     const startBtn = document.getElementById('start-panel');
     const stopBtn = document.getElementById('stop-panel');
-    const picker = document.getElementById('roster-picker');
-    const livePanel = document.getElementById('panel-live');
     const activeSpeaker = document.getElementById('active-speaker');
     const transcriptEl = document.getElementById('panel-transcript');
     const statusEl = document.getElementById('panel-status');
+    const emptyEl = document.getElementById('empty-transcript');
 
     let client = null;
     let liveBubbles = {}; // speaker -> DOM element for the current (interim) turn
 
     function renderLine(speaker, text) {
+        if (emptyEl) emptyEl.remove();
         let el = liveBubbles[speaker];
         if (!el) {
             el = document.createElement('div');
@@ -87,6 +90,7 @@
     }
 
     function systemLine(text) {
+        if (emptyEl) emptyEl.remove();
         const el = document.createElement('div');
         el.className = 'text-xs text-slate-500 italic';
         el.textContent = text;
@@ -95,26 +99,27 @@
     }
 
     startBtn.addEventListener('click', () => {
-        const ids = Array.from(document.querySelectorAll('.panel-persona:checked')).map(c => c.value);
-        if (ids.length === 0) { alert('Pick at least one agent for the panel.'); return; }
-
-        client = new PanelAudioClient({ conversationId: window.panelConfig.sessionId, personaIds: ids });
+        client = new PanelAudioClient({
+            conversationId: window.panelConfig.panelId,
+            personaIds: window.panelConfig.personaIds,
+        });
         client.onStatus = (s, d) => { statusEl.textContent = d ? (s + ': ' + d) : s; };
         client.onActiveSpeaker = (id, name) => { activeSpeaker.textContent = name; };
         client.onHandoff = (toName) => { systemLine('— handing the floor to ' + toName + ' —'); };
         client.onPanelTranscript = (speaker, text, final) => { renderLine(speaker, text); };
         client.onTurnComplete = () => { liveBubbles = {}; }; // new bubbles for the next turn
 
-        picker.classList.add('hidden');
-        livePanel.classList.remove('hidden');
+        startBtn.classList.add('hidden');
+        stopBtn.classList.remove('hidden');
         client.start();
     });
 
     stopBtn.addEventListener('click', () => {
         if (client) { client.stop(); client = null; }
-        livePanel.classList.add('hidden');
-        picker.classList.remove('hidden');
+        stopBtn.classList.add('hidden');
+        startBtn.classList.remove('hidden');
         statusEl.textContent = 'idle';
+        activeSpeaker.textContent = '—';
         liveBubbles = {};
     });
 })();

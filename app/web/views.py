@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import Persona, Conversation, Message, Memory
+from app.models import Persona, Conversation, Message, Memory, Panel, PanelMessage
 
 router = APIRouter(tags=["Web Views"])
 
@@ -33,22 +33,102 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.get("/panel", response_class=HTMLResponse)
-async def panel_view(request: Request, db: AsyncSession = Depends(get_db)):
+@router.get("/panels", response_class=HTMLResponse)
+async def panels_hub(request: Request, db: AsyncSession = Depends(get_db)):
     """
-    Renders the multi-agent voice panel: pick a roster, a host greets you, then call agents by
-    name to hand off the floor. A fresh session id is used for per-persona memory scoping.
+    Panels hub: create a new saved panel from a roster, or resume an existing one. Saved
+    panels persist their roster and full transcript, so a panel is a durable conversation.
     """
-    stmt = select(Persona).order_by(Persona.is_builtin.desc(), Persona.created_at.desc())
-    result = await db.execute(stmt)
-    personas = result.scalars().all()
+    personas = (
+        (
+            await db.execute(
+                select(Persona).order_by(
+                    Persona.is_builtin.desc(), Persona.created_at.desc()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    panels = (
+        (await db.execute(select(Panel).order_by(Panel.updated_at.desc())))
+        .scalars()
+        .all()
+    )
+
+    # Resolve each panel's roster ids to display names for the hub cards.
+    name_by_id = {str(p.id): p.name for p in personas}
+    panel_rows = [
+        {
+            "id": panel.id,
+            "name": panel.name,
+            "updated_at": panel.updated_at,
+            "roster_names": [
+                name_by_id.get(str(pid), "Unknown") for pid in (panel.persona_ids or [])
+            ],
+        }
+        for panel in panels
+    ]
+
+    return templates.TemplateResponse(
+        request=request,
+        name="panels_hub.html",
+        context={
+            "title": "Voice Panels — Aura",
+            "personas": personas,
+            "panels": panel_rows,
+        },
+    )
+
+
+@router.get("/panel/{panel_id}", response_class=HTMLResponse)
+async def panel_live_view(
+    panel_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """
+    Live view for one saved panel: renders its persisted transcript, then connects to
+    /ws/panel/{panel_id} with the panel's stored roster so the conversation resumes.
+    """
+    panel = await db.get(Panel, panel_id)
+    if not panel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Panel not found"
+        )
+
+    # Load the roster personas, preserving the panel's stored order.
+    persona_rows = (
+        (
+            await db.execute(
+                select(Persona).where(Persona.id.in_(panel.persona_ids or []))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_id = {str(p.id): p for p in persona_rows}
+    roster = [by_id[str(pid)] for pid in (panel.persona_ids or []) if str(pid) in by_id]
+
+    messages = (
+        (
+            await db.execute(
+                select(PanelMessage)
+                .where(PanelMessage.panel_id == panel_id)
+                .order_by(PanelMessage.created_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     return templates.TemplateResponse(
         request=request,
         name="panel.html",
         context={
-            "title": "Voice Panel — Aura",
-            "personas": personas,
-            "session_id": uuid.uuid4(),
+            "title": f"{panel.name} — Voice Panel",
+            "panel": panel,
+            "roster": roster,
+            "messages": messages,
         },
     )
 

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-6 space-y-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between border-b border-slate-900 pb-4">
+        <div class="flex items-center gap-3">
+            <a href="/" class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-all">
+                <i class="fa-solid fa-arrow-left text-sm"></i>
+            </a>
+            <h1 class="font-outfit font-extrabold text-2xl text-slate-100">🎛️ Voice Panels</h1>
+        </div>
+    </div>
+
+    <p class="text-sm text-slate-400 font-light">
+        A <strong class="text-slate-200">panel</strong> is a saved multi-agent voice room. A host greets you;
+        say an agent's name to hand them the floor. Panels persist their roster and full transcript, so you can
+        resume them anytime. <span class="text-amber-400/80">Use headphones</span> — echo cancellation is unavailable on most setups.
+    </p>
+
+    <!-- Create Panel -->
+    <div class="glass-panel rounded-3xl p-6 space-y-5 shadow-lg border border-slate-800/80">
+        <h2 class="font-outfit font-bold text-slate-200 uppercase text-xs tracking-widest border-l-2 border-brand-500 pl-3">
+            Create a Panel
+        </h2>
+        <div class="space-y-2">
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Panel Name</label>
+            <input id="panel-name" type="text" placeholder="e.g. Product Strategy Room"
+                class="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-500/60">
+        </div>
+        <div class="space-y-2">
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Roster</label>
+            {% if personas %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {% for p in personas %}
+                <label class="flex items-center gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:border-brand-500/50 transition-all">
+                    <input type="checkbox" class="panel-persona w-4 h-4 accent-brand-500" value="{{ p.id }}" data-name="{{ p.name }}">
+                    <div class="min-w-0">
+                        <div class="text-sm font-semibold text-slate-100 truncate">{{ p.name }}</div>
+                        <div class="text-xs text-slate-500 truncate">{{ p.description or '' }}</div>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-slate-500 italic">No personas available. Create one first.</p>
+            {% endif %}
+        </div>
+        <button id="create-panel" class="px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-semibold shadow-lg transition-all active:scale-[0.98]">
+            <i class="fa-solid fa-plus text-xs mr-1.5"></i> Create &amp; Open
+        </button>
+        <p id="create-error" class="text-xs text-rose-400 hidden"></p>
+    </div>
+
+    <!-- Saved Panels -->
+    <div class="space-y-4">
+        <h2 class="font-outfit font-bold text-slate-300 uppercase text-xs tracking-widest border-l-2 border-purple-500 pl-3">
+            Saved Panels
+        </h2>
+
+        {% if panels %}
+        <div class="glass-panel rounded-3xl overflow-hidden border border-slate-800/60 divide-y divide-slate-900/80">
+            {% for panel in panels %}
+            <div id="panel-row-{{ panel.id }}" class="p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-slate-900/20 transition-colors">
+                <div class="space-y-1.5 min-w-0">
+                    <h3 class="font-outfit font-bold text-lg text-slate-200 truncate">{{ panel.name }}</h3>
+                    <div class="flex flex-wrap gap-1.5">
+                        {% for rn in panel.roster_names %}
+                        <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-900/80 border border-slate-800 text-slate-400">{{ rn }}</span>
+                        {% endfor %}
+                    </div>
+                    <p class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                        <i class="fa-regular fa-clock text-[10px]"></i>
+                        Last active: <span class="capitalize">{{ panel.updated_at.strftime('%b %d, %Y, %I:%M %p') }}</span>
+                    </p>
+                </div>
+                <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <a href="/panel/{{ panel.id }}" class="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-200 text-xs font-semibold rounded-xl transition-all hover:border-slate-700 flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-headset text-xs"></i> Open Panel
+                    </a>
+                    <button
+                        hx-delete="/api/panels/{{ panel.id }}"
+                        hx-confirm="Delete this panel and its entire transcript?"
+                        hx-target="#panel-row-{{ panel.id }}"
+                        hx-swap="outerHTML"
+                        class="p-2.5 rounded-xl bg-slate-900/40 hover:bg-rose-950/20 border border-slate-900 hover:border-rose-900/40 text-slate-500 hover:text-rose-400 transition-all"
+                        title="Delete Panel"
+                    >
+                        <i class="fa-regular fa-trash-can text-xs"></i>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="glass-panel rounded-3xl p-10 text-center space-y-3 border-dashed border-2 border-slate-850/80">
+            <div class="w-12 h-12 mx-auto rounded-full bg-slate-900 border border-slate-850 flex items-center justify-center">
+                <i class="fa-solid fa-users text-slate-500 text-lg"></i>
+            </div>
+            <h3 class="font-outfit font-bold text-slate-300">No Saved Panels</h3>
+            <p class="text-slate-400 text-sm font-light max-w-md mx-auto">Create your first panel above to start a multi-agent voice conversation that remembers.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const createBtn = document.getElementById('create-panel');
+    const nameInput = document.getElementById('panel-name');
+    const errorEl = document.getElementById('create-error');
+
+    function showError(msg) {
+        errorEl.textContent = msg;
+        errorEl.classList.remove('hidden');
+    }
+
+    createBtn.addEventListener('click', async () => {
+        errorEl.classList.add('hidden');
+        const ids = Array.from(document.querySelectorAll('.panel-persona:checked')).map(c => c.value);
+        if (ids.length === 0) { showError('Pick at least one persona for the panel.'); return; }
+        const name = (nameInput.value || '').trim() || 'Untitled Panel';
+
+        createBtn.disabled = true;
+        createBtn.classList.add('opacity-60');
+        try {
+            const resp = await fetch('/api/panels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, persona_ids: ids }),
+            });
+            if (!resp.ok) {
+                let detail = 'Failed to create panel.';
+                try { detail = (await resp.json()).detail || detail; } catch (e) {}
+                showError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+                return;
+            }
+            const panel = await resp.json();
+            window.location.href = '/panel/' + panel.id;
+        } catch (e) {
+            showError('Network error creating panel.');
+        } finally {
+            createBtn.disabled = false;
+            createBtn.classList.remove('opacity-60');
+        }
+    });
+})();
+</script>
+{% endblock %}

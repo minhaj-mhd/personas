@@ -144,3 +144,42 @@ async def test_delete_panel_cascades_messages():
             .all()
         )
         assert rows == []
+
+
+# --- Web views (server-rendered hub + resume page) ---
+
+
+@pytest.mark.asyncio
+async def test_panels_hub_renders():
+    await _make_persona("HubVisiblePersona")
+    async with await _client() as ac:
+        resp = await ac.get("/panels")
+    assert resp.status_code == 200
+    assert "Voice Panels" in resp.text
+    assert "Create a Panel" in resp.text
+    assert "HubVisiblePersona" in resp.text  # persona offered in the roster picker
+
+
+@pytest.mark.asyncio
+async def test_panel_live_view_renders_roster_and_history():
+    a = await _make_persona("ResumePanelist")
+    async with await _client() as ac:
+        panel = (
+            await ac.post(
+                "/api/panels", json={"name": "Resume Me", "persona_ids": [str(a)]}
+            )
+        ).json()
+        await append_panel_message(uuid.UUID(panel["id"]), "You", "remembered line")
+
+        resp = await ac.get(f"/panel/{panel['id']}")
+    assert resp.status_code == 200
+    assert "Resume Me" in resp.text  # panel name
+    assert "ResumePanelist" in resp.text  # roster chip
+    assert "remembered line" in resp.text  # persisted transcript pre-rendered
+
+
+@pytest.mark.asyncio
+async def test_panel_live_view_404_for_unknown():
+    async with await _client() as ac:
+        resp = await ac.get(f"/panel/{uuid.uuid4()}")
+    assert resp.status_code == 404
