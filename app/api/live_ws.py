@@ -21,6 +21,7 @@ from app.services.gemini_live import (
     build_system_instruction,
     build_live_config,
     prime_session_with_images,
+    send_image_frame,
 )
 from app.services.assets import get_scope_images
 from app.services.summarizer import SummarizerService
@@ -308,6 +309,11 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                             data = json.loads(message["text"])
                             if data.get("type") == "client_info":
                                 print(f"[LIVE] client_info: {data}", flush=True)
+                            elif data.get("type") == "image_frame":
+                                # Screen-share / captured frame -> visual input to Gemini.
+                                await send_image_frame(
+                                    session, data.get("mime"), data.get("data", "")
+                                )
                             elif data.get("type") in ["stop", "audio_end"]:
                                 print(
                                     "[LIVE] uplink: stop/audio_end from browser",

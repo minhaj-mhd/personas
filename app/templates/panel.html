@@ -32,6 +32,14 @@
             <button id="start-panel" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white text-sm font-semibold shadow-lg transition-all active:scale-[0.98]">
                 <i class="fa-solid fa-headset text-xs mr-1"></i> Start
             </button>
+            <button id="screen-btn" title="Share your screen with the panel (during a live session)"
+                class="px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 text-sm font-semibold transition-all flex items-center gap-1.5">
+                <i class="fa-solid fa-display text-[10px]"></i> <span id="screen-btn-text">Share Screen</span>
+            </button>
+            <button id="capture-btn" title="Capture the current screen and upload it"
+                class="px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 text-sm font-semibold transition-all flex items-center gap-1.5">
+                <i class="fa-solid fa-camera text-[10px]"></i> Capture
+            </button>
             <button id="stop-panel" class="hidden px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/25 text-sm font-semibold transition-all">
                 <i class="fa-solid fa-stop text-[10px] mr-1"></i> End
             </button>
@@ -65,7 +73,8 @@
 <script>
     window.panelConfig = {
         panelId: "{{ panel.id }}",
-        personaIds: [{% for p in roster %}"{{ p.id }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+        personaIds: [{% for p in roster %}"{{ p.id }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+        imagesUploadUrl: "/api/panels/{{ panel.id }}/images"
     };
 </script>
 <script src="/static/js/live.js"></script>
@@ -78,8 +87,12 @@
     const transcriptEl = document.getElementById('panel-transcript');
     const statusEl = document.getElementById('panel-status');
     const emptyEl = document.getElementById('empty-transcript');
+    const screenBtn = document.getElementById('screen-btn');
+    const screenBtnText = document.getElementById('screen-btn-text');
+    const captureBtn = document.getElementById('capture-btn');
 
     let client = null;
+    let sharing = false;
     let liveBubbles = {}; // speaker -> DOM element for the current (interim) turn
 
     function renderLine(speaker, text) {
@@ -117,6 +130,12 @@
         client.onHandoff = (toName) => { systemLine('— handing the floor to ' + toName + ' —'); };
         client.onPanelTranscript = (speaker, text, final) => { renderLine(speaker, text); };
         client.onTurnComplete = () => { liveBubbles = {}; }; // new bubbles for the next turn
+        client.onScreenShare = (active) => {
+            sharing = active;
+            screenBtnText.textContent = active ? 'Stop Sharing' : 'Share Screen';
+            screenBtn.classList.toggle('text-emerald-400', active);
+            screenBtn.classList.toggle('border-emerald-500/30', active);
+        };
 
         startBtn.classList.add('hidden');
         stopBtn.classList.remove('hidden');
@@ -129,7 +148,35 @@
         startBtn.classList.remove('hidden');
         statusEl.textContent = 'idle';
         activeSpeaker.textContent = '—';
+        sharing = false;
+        screenBtnText.textContent = 'Share Screen';
         liveBubbles = {};
+    });
+
+    screenBtn.addEventListener('click', async () => {
+        if (!client) { statusEl.textContent = 'start the panel first'; return; }
+        if (sharing) client.stopScreenShare();
+        else await client.startScreenShare(1);
+    });
+
+    captureBtn.addEventListener('click', async () => {
+        const orig = captureBtn.innerHTML;
+        captureBtn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin text-[10px]"></i> Capturing';
+        try {
+            // Use the client's capture if live, else a lightweight standalone capture.
+            const grabber = client || new PanelAudioClient({ conversationId: window.panelConfig.panelId, personaIds: [] });
+            const blob = await grabber.captureScreenFrame();
+            const fd = new FormData();
+            fd.append('file', blob, 'screen-capture.jpg');
+            const resp = await fetch(window.panelConfig.imagesUploadUrl, { method: 'POST', body: fd });
+            if (!resp.ok) throw new Error('upload failed');
+            if (client) await client.sendImageBlobToLive(blob);
+            captureBtn.innerHTML = '<i class="fa-solid fa-check text-[10px] text-emerald-400"></i> Uploaded';
+        } catch (e) {
+            console.warn('capture failed', e);
+            captureBtn.innerHTML = '<i class="fa-solid fa-xmark text-[10px] text-rose-400"></i> Failed';
+        }
+        setTimeout(() => { captureBtn.innerHTML = orig; }, 1800);
     });
 })();
 </script>

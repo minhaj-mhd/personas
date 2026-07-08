@@ -43,11 +43,23 @@
                 </div>
             </div>
 
-            <button 
-                id="live-btn" 
+            <button
+                id="live-btn"
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/25 transition-all duration-150 flex items-center gap-1.5"
             >
                 <i class="fa-solid fa-headset text-[10px]"></i> <span id="live-btn-text">Go Live</span>
+            </button>
+
+            <!-- Screen share (live video into the session) -->
+            <button id="screen-btn" title="Share your screen with the agent (during a live session)"
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-all flex items-center gap-1.5">
+                <i class="fa-solid fa-display text-[10px]"></i> <span id="screen-btn-text">Share Screen</span>
+            </button>
+
+            <!-- Capture current screen and upload it as a reference image -->
+            <button id="capture-btn" title="Capture the current screen and upload it"
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-all flex items-center gap-1.5">
+                <i class="fa-solid fa-camera text-[10px]"></i> Capture
             </button>
 
             <div id="action-status" class="hidden px-3 py-1 rounded-lg text-xs font-mono bg-slate-900 border border-slate-800 text-slate-400 flex items-center gap-2">
@@ -147,7 +159,8 @@
     window.chatConfig = {
         conversationId: "{{ conversation.id }}",
         personaName: "{{ persona.name }}",
-        isBuiltin: {% if persona.is_builtin %}true{% else %}false{% endif %}
+        isBuiltin: {% if persona.is_builtin %}true{% else %}false{% endif %},
+        imagesUploadUrl: "/api/personas/{{ persona.id }}/images"
     };
 </script>
 <!-- Client-side WebSocket integration code -->
@@ -282,6 +295,49 @@
                 console.warn('LiveSession controller not found (WP-3 missing?).');
                 window.LiveUI.setStatus('error', 'Live system not loaded');
             }
+        });
+
+        // --- Screen share + capture ---
+        const screenBtn = document.getElementById('screen-btn');
+        const screenBtnText = document.getElementById('screen-btn-text');
+        const captureBtn = document.getElementById('capture-btn');
+        let sharing = false;
+
+        if (window.LiveSession) {
+            window.LiveSession.onScreenShare = (active) => {
+                sharing = active;
+                screenBtnText.textContent = active ? 'Stop Sharing' : 'Share Screen';
+                screenBtn.classList.toggle('text-emerald-400', active);
+                screenBtn.classList.toggle('border-emerald-500/30', active);
+            };
+        }
+
+        screenBtn.addEventListener('click', async () => {
+            if (!window.LiveSession) return;
+            if (!isLive) { window.LiveUI.setStatus('error', 'Go live first to share your screen'); return; }
+            if (sharing) window.LiveSession.stopScreenShare();
+            else await window.LiveSession.startScreenShare(1);
+        });
+
+        captureBtn.addEventListener('click', async () => {
+            if (!window.LiveSession) return;
+            const orig = captureBtn.innerHTML;
+            captureBtn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin text-[10px]"></i> Capturing';
+            try {
+                const blob = await window.LiveSession.captureScreenFrame();
+                // Persist it as a reference image for this persona.
+                const fd = new FormData();
+                fd.append('file', blob, 'screen-capture.jpg');
+                const resp = await fetch(window.chatConfig.imagesUploadUrl, { method: 'POST', body: fd });
+                if (!resp.ok) throw new Error('upload failed');
+                // If a session is live, also show it to the agent right now.
+                if (isLive) await window.LiveSession.sendImageBlobToLive(blob);
+                captureBtn.innerHTML = '<i class="fa-solid fa-check text-[10px] text-emerald-400"></i> Uploaded';
+            } catch (e) {
+                console.warn('capture failed', e);
+                captureBtn.innerHTML = '<i class="fa-solid fa-xmark text-[10px] text-rose-400"></i> Failed';
+            }
+            setTimeout(() => { captureBtn.innerHTML = orig; }, 1800);
         });
     });
 </script>

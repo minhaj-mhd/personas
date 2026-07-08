@@ -275,3 +275,36 @@ async def test_get_scope_images_persona_and_panel():
         (PNG_1x1, "image/png")
     ]
     assert await get_scope_images() == []  # no scope -> nothing
+
+
+# --- Screen-share / capture frames -> realtime visual input ---
+
+
+class _FakeVideoSession:
+    def __init__(self):
+        self.frames = []
+
+    async def send_realtime_input(self, video=None):
+        self.frames.append(video)
+
+
+@pytest.mark.asyncio
+async def test_send_image_frame_decodes_and_sends():
+    from app.services.gemini_live import send_image_frame
+
+    sess = _FakeVideoSession()
+    b64 = base64.b64encode(PNG_1x1).decode()
+    assert await send_image_frame(sess, "image/png", b64) is True
+    assert len(sess.frames) == 1
+    assert sess.frames[0].data == PNG_1x1
+    assert sess.frames[0].mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_send_image_frame_rejects_empty_and_bad_b64():
+    from app.services.gemini_live import send_image_frame
+
+    sess = _FakeVideoSession()
+    assert await send_image_frame(sess, "image/png", "") is False
+    assert await send_image_frame(sess, "image/png", "!!!not base64!!!") is False
+    assert sess.frames == []

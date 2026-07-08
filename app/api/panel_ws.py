@@ -30,6 +30,7 @@ from app.services.gemini_live import (
     resolve_voice,
     build_live_config,
     prime_session_with_images,
+    send_image_frame,
 )
 from app.services.assets import get_scope_images
 from app.services.panel.router import PanelParticipant
@@ -367,7 +368,11 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
                         elif message.get("text") is not None:
                             try:
                                 data = json.loads(message["text"])
-                                if data.get("type") in ("stop", "audio_end"):
+                                if data.get("type") == "image_frame":
+                                    await send_image_frame(
+                                        session, data.get("mime"), data.get("data", "")
+                                    )
+                                elif data.get("type") in ("stop", "audio_end"):
                                     stop = True
                                     return
                             except json.JSONDecodeError:

@@ -1,3 +1,4 @@
+import base64
 import logging
 from google import genai
 from google.genai import types
@@ -137,6 +138,22 @@ async def prime_session_with_images(session, images: list[tuple[bytes, str]]) ->
         turn_complete=False,
     )
     return len(images)
+
+
+async def send_image_frame(session, mime_type: str | None, data_b64: str) -> bool:
+    """Send one image frame (a screen-share tick or a captured snapshot) to a live
+    session as realtime visual input. `data_b64` is base64 without a data: prefix.
+    Returns False (rather than raising) on empty/bad data so the uplink loop is safe."""
+    if not data_b64:
+        return False
+    try:
+        raw = base64.b64decode(data_b64)
+    except (ValueError, TypeError):
+        return False
+    await session.send_realtime_input(
+        video=types.Blob(data=raw, mime_type=mime_type or "image/jpeg")
+    )
+    return True
 
 
 class GeminiLiveService:

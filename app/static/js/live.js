@@ -8,11 +8,116 @@ class LiveAudioClient {
         this.activeSources = [];
         this.nextStartTime = 0;
         
+        // Screen-share state (continuous frames streamed into the live session)
+        this.screenStream = null;
+        this.screenInterval = null;
+
         // Callbacks for UI updates (to be hooked up by WP-4)
         this.onStatus = null;
         this.onInputTranscript = null;
         this.onOutputTranscript = null;
         this.onLevel = null; // (rms: number) -> void, called every mic frame for live level meter
+        this.onScreenShare = null; // (active: bool) -> void
+    }
+
+    // --- Screen sharing / capture (Gemini Live accepts image frames as visual input) ---
+
+    _sendJson(obj) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(obj));
+            return true;
+        }
+        return false;
+    }
+
+    // Draw a media stream's current frame to a canvas, downscaled to bound payload size,
+    // and return { mime, data } where data is base64 (no data: prefix).
+    _grabFrame(video, quality = 0.6, maxW = 1280) {
+        const vw = video.videoWidth || maxW;
+        const vh = video.videoHeight || 720;
+        const scale = Math.min(1, maxW / vw);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(vw * scale));
+        canvas.height = Math.max(1, Math.round(vh * scale));
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        return { mime: 'image/jpeg', data: dataUrl.split(',')[1] };
+    }
+
+    async _displayVideo() {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.muted = true;
+        await video.play();
+        return { stream, video };
+    }
+
+    // Start streaming the shared screen to the live session at ~1 fps. Requires an
+    // active session (frames go over the same WebSocket as a JSON image_frame message).
+    async startScreenShare(fps = 1) {
+        if (this.screenStream) return true;
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            if (this.onStatus) this.onStatus('error', 'Go live before sharing your screen');
+            return false;
+        }
+        let stream, video;
+        try {
+            ({ stream, video } = await this._displayVideo());
+        } catch (e) {
+            console.warn('Screen share cancelled/denied:', e && e.name);
+            return false;
+        }
+        this.screenStream = stream;
+        this._screenVideo = video;
+        // If the user stops sharing via the browser's own UI, tear down cleanly.
+        stream.getVideoTracks()[0].addEventListener('ended', () => this.stopScreenShare());
+
+        this.screenInterval = setInterval(() => {
+            try {
+                const frame = this._grabFrame(video);
+                this._sendJson({ type: 'image_frame', mime: frame.mime, data: frame.data });
+            } catch (e) {
+                console.warn('frame grab failed', e);
+            }
+        }, Math.max(200, Math.round(1000 / fps)));
+
+        if (this.onScreenShare) this.onScreenShare(true);
+        return true;
+    }
+
+    stopScreenShare() {
+        if (this.screenInterval) { clearInterval(this.screenInterval); this.screenInterval = null; }
+        if (this.screenStream) {
+            this.screenStream.getTracks().forEach((t) => t.stop());
+            this.screenStream = null;
+        }
+        this._screenVideo = null;
+        if (this.onScreenShare) this.onScreenShare(false);
+    }
+
+    // One-shot: capture the current screen as a single JPEG Blob (prompts device picker).
+    // Used by the "capture screen" button to upload a snapshot.
+    async captureScreenFrame(quality = 0.85) {
+        const { stream, video } = await this._displayVideo();
+        try {
+            // Give the first frame a beat to paint.
+            await new Promise((r) => setTimeout(r, 150));
+            const { data } = this._grabFrame(video, quality, 1920);
+            const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+            return new Blob([bytes], { type: 'image/jpeg' });
+        } finally {
+            stream.getTracks().forEach((t) => t.stop());
+        }
+    }
+
+    // Send an already-captured image Blob into the live session (if one is active).
+    async sendImageBlobToLive(blob) {
+        const buf = await blob.arrayBuffer();
+        let binary = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return this._sendJson({ type: 'image_frame', mime: blob.type || 'image/jpeg', data: btoa(binary) });
     }
 
     // track.muted can lag for a moment after getUserMedia; wait, then read the real state.
@@ -276,6 +381,7 @@ class LiveAudioClient {
     }
 
     stop() {
+        this.stopScreenShare();
         if (this.processor) {
             this.processor.disconnect();
             this.processor = null;
