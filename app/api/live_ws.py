@@ -24,6 +24,7 @@ from app.services.gemini_live import (
     send_image_frame,
 )
 from app.services.assets import get_scope_images
+from app.services.mcp.client import build_sheets_provider
 from app.services.summarizer import SummarizerService
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,10 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
 
     gemini_live = GeminiLiveService()
 
+    # MCP (e.g. Google Sheets) tool provider — opened below only if enabled in settings.
+    mcp_provider = None
+    mcp_stack = None
+
     # Shared state for transcripts
     current_input_text = ""
     current_output_text = ""
@@ -112,6 +117,31 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
             await session.commit()
 
     try:
+        # Bring up the MCP (Google Sheets) tool provider and expose its tools to the
+        # model, if enabled. A failure here is non-fatal — the session runs without it.
+        if settings.MCP_SHEETS_ENABLED:
+            from contextlib import AsyncExitStack
+
+            try:
+                mcp_stack = AsyncExitStack()
+                mcp_provider = await mcp_stack.enter_async_context(
+                    build_sheets_provider()
+                )
+                config = build_live_config(
+                    system_instruction=sys_instruct,
+                    voice=voice,
+                    temperature=temperature,
+                    enable_search=enable_search,
+                    extra_function_declarations=mcp_provider.declarations,
+                )
+                print(
+                    f"[LIVE] MCP tools: {[d.name for d in mcp_provider.declarations]}",
+                    flush=True,
+                )
+            except Exception as e:
+                logger.error(f"MCP init failed; continuing without it: {e}")
+                mcp_provider = None
+
         print(
             f"[LIVE] connecting | model={settings.LIVE_MODEL} | voice={voice} | search={enable_search}",
             flush=True,
@@ -169,6 +199,28 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                                 responses.append(types.FunctionResponse(**kwargs))
                             except Exception as e:
                                 logger.error(f"Error in tool call: {e}")
+
+                    elif mcp_provider is not None and mcp_provider.owns(fc.name):
+                        # A tool bridged from the MCP server (e.g. Google Sheets).
+                        args = fc.args if isinstance(fc.args, dict) else {}
+                        try:
+                            result = await mcp_provider.dispatch(fc.name, args)
+                            responses.append(
+                                types.FunctionResponse(
+                                    id=fc.id,
+                                    name=fc.name,
+                                    response={"result": result or ""},
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(f"MCP tool '{fc.name}' failed: {e}")
+                            responses.append(
+                                types.FunctionResponse(
+                                    id=fc.id,
+                                    name=fc.name,
+                                    response={"error": str(e)},
+                                )
+                            )
 
                 if responses:
                     try:
@@ -354,6 +406,12 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
         except Exception:
             pass
     finally:
+        # Tear down the MCP server process (if we started one).
+        if mcp_stack is not None:
+            try:
+                await mcp_stack.aclose()
+            except Exception as e:
+                logger.error(f"Error closing MCP provider: {e}")
         # Trigger summarizer explicitly on disconnect per §2.2
         try:
             asyncio.create_task(

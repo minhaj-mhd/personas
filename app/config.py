@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     LIVE_INPUT_SAMPLE_RATE: int = 16000  # PCM16 mono the client must stream up
     LIVE_OUTPUT_SAMPLE_RATE: int = 24000  # PCM16 mono the model streams back
 
+    # MCP — Google Sheets access for live sessions (Model Context Protocol).
+    # When enabled, the app launches the configured MCP server over stdio, exposes its
+    # tools to the live agent, and forwards tool calls to it. Point COMMAND/ARGS at a
+    # Google Sheets MCP server you run (with your own Google credentials); pass any
+    # secrets the server needs via MCP_SHEETS_ENV. Disabled by default — off means the
+    # live sessions behave exactly as before. See MCP_GOOGLE_SHEETS.md.
+    MCP_SHEETS_ENABLED: bool = False
+    MCP_SHEETS_COMMAND: str = "npx"
+    MCP_SHEETS_ARGS: list[str] = []  # e.g. ["-y", "@your/google-sheets-mcp"]
+    MCP_SHEETS_ENV: dict[str, str] = {}  # extra env vars for the MCP server process
+
     # Memory configuration
     SHORT_TERM_MESSAGES: int = 12
     SUMMARIZE_THRESHOLD: int = 10

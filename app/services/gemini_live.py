@@ -86,11 +86,15 @@ def build_live_config(
     temperature: float,
     enable_search: bool,
     routing: bool = False,
+    extra_function_declarations: list[types.FunctionDeclaration] | None = None,
 ) -> types.LiveConnectConfig:
 
     fns = [recall_memory_declaration()]
     if routing:
         fns.append(route_to_agent_declaration())
+    if extra_function_declarations:
+        # e.g. tools bridged from an MCP server (Google Sheets).
+        fns.extend(extra_function_declarations)
     tools = [types.Tool(function_declarations=fns)]
     if enable_search:
         tools.append(types.Tool(google_search=types.GoogleSearch()))

@@ -49,8 +49,12 @@ Use the project's standard tools for their domain rather than ad-hoc scripts:
 - **Tests**: `pytest` with `pytest-asyncio`; providers (Gemini/embeddings/TTS) are **mocked**,
   and the DB points at a **test database / rolled-back transaction** — see Engineering Discipline §2.
 - **Lint/format**: Ruff + Black before finishing a change.
-- **MCP**: no MCP servers are configured for this repo yet. If/when one is added, document it
-  here and prefer it over custom scripts for its domain.
+- **MCP**: a **Google Sheets** integration via the Model Context Protocol is wired in but
+  **disabled by default** (`MCP_SHEETS_ENABLED=false`). When enabled, live sessions launch a
+  configured Sheets MCP server and expose its tools to the agent — see
+  [`MCP_GOOGLE_SHEETS.md`](file:///c:/Users/loq/Desktop/learn/personas/MCP_GOOGLE_SHEETS.md)
+  and `app/services/mcp/`. Prefer this MCP path over ad-hoc Sheets scripts. If you add
+  another MCP server, document it here too.
 
 ---
 

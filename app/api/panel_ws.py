@@ -33,6 +33,7 @@ from app.services.gemini_live import (
     send_image_frame,
 )
 from app.services.assets import get_scope_images
+from app.services.mcp.client import build_sheets_provider
 from app.services.panel.router import PanelParticipant
 from app.services.panel.session import PanelState, build_agent_priming
 from app.services.panel.persistence import load_panel, append_panel_message
@@ -126,6 +127,33 @@ async def _handle_recall_tool(
             logger.error(f"Panel send_tool_response failed: {e}")
 
 
+async def _handle_mcp_tools(session, function_calls, mcp_provider):
+    """Forward MCP-bridged tool calls (e.g. Google Sheets) to the MCP server and
+    return their results to the live session."""
+    responses = []
+    for fc in function_calls:
+        args = fc.args if isinstance(fc.args, dict) else {}
+        try:
+            result = await mcp_provider.dispatch(fc.name, args)
+            responses.append(
+                types.FunctionResponse(
+                    id=fc.id, name=fc.name, response={"result": result or ""}
+                )
+            )
+        except Exception as e:
+            logger.error(f"Panel MCP tool '{fc.name}' failed: {e}")
+            responses.append(
+                types.FunctionResponse(
+                    id=fc.id, name=fc.name, response={"error": str(e)}
+                )
+            )
+    if responses:
+        try:
+            await session.send_tool_response(function_responses=responses)
+        except Exception as e:
+            logger.error(f"Panel MCP send_tool_response failed: {e}")
+
+
 @router.websocket("/ws/panel/{panel_id}")
 async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
     await websocket.accept()
@@ -192,6 +220,23 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
     # Reference images uploaded to this (saved) panel — shown to whoever speaks.
     panel_images = await get_scope_images(panel_id=panel_id) if persist else []
 
+    # MCP (Google Sheets) tools, shared across every speaker's session. Opened once
+    # for the whole panel; disabled by default (no change to existing behavior).
+    mcp_provider = None
+    mcp_stack = None
+    mcp_declarations = []
+    if settings.MCP_SHEETS_ENABLED:
+        from contextlib import AsyncExitStack
+
+        try:
+            mcp_stack = AsyncExitStack()
+            mcp_provider = await mcp_stack.enter_async_context(build_sheets_provider())
+            mcp_declarations = mcp_provider.declarations
+        except Exception as e:
+            logger.error(f"Panel MCP init failed; continuing without it: {e}")
+            mcp_provider = None
+            mcp_declarations = []
+
     stop = False
 
     # 3. Outer loop — one Live session at a time (host, then whichever agent is named).
@@ -214,7 +259,12 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
             speaker_name = pdata["name"]
 
         config = build_live_config(
-            sys_instruct, voice, temperature, enable_search=False, routing=True
+            sys_instruct,
+            voice,
+            temperature,
+            enable_search=False,
+            routing=True,
+            extra_function_declarations=mcp_declarations,
         )
         await websocket.send_json(
             {"type": "active_speaker", "persona_id": target_id, "name": speaker_name}
@@ -312,6 +362,7 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
                             if tc and getattr(tc, "function_calls", None):
                                 switch_to = None
                                 recall_fcs = []
+                                mcp_fcs = []
                                 for fc in tc.function_calls:
                                     if fc.name == "route_to_agent":
                                         req = (
@@ -324,6 +375,10 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
                                             switch_to = tgt
                                     elif fc.name == "recall_memory" and target_id:
                                         recall_fcs.append(fc)
+                                    elif mcp_provider is not None and mcp_provider.owns(
+                                        fc.name
+                                    ):
+                                        mcp_fcs.append(fc)
                                 if recall_fcs:
                                     asyncio.create_task(
                                         _handle_recall_tool(
@@ -332,6 +387,12 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
                                             uuid.UUID(target_id),
                                             panel_id,
                                             memory_service,
+                                        )
+                                    )
+                                if mcp_fcs:
+                                    asyncio.create_task(
+                                        _handle_mcp_tools(
+                                            session, mcp_fcs, mcp_provider
                                         )
                                     )
                                 if switch_to:
@@ -399,3 +460,10 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
             except Exception:
                 pass
             stop = True
+
+    # Clean up the MCP server process, if one was started for this panel.
+    if mcp_stack is not None:
+        try:
+            await mcp_stack.aclose()
+        except Exception as e:
+            logger.error(f"Error closing panel MCP provider: {e}")

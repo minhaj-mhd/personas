@@ -31,6 +31,11 @@ dev = [
     "ruff>=0.3.3",
     "black>=24.2.0"
 ]
+# Optional: MCP (Model Context Protocol) client, for Google Sheets access in live
+# sessions. Only needed when MCP_SHEETS_ENABLED=true. Install with: pip install -e '.[mcp]'
+mcp = [
+    "mcp>=1.0.0"
+]
 
 [tool.setuptools]
 package-dir = {"app" = "."}
