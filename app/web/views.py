@@ -117,6 +117,23 @@ async def panel_live_view(
     by_id = {str(p.id): p for p in persona_rows}
     roster = [by_id[str(pid)] for pid in (panel.persona_ids or []) if str(pid) in by_id]
 
+    # Personas not yet on this panel — offered in the "add agent" control.
+    roster_id_set = {str(pid) for pid in (panel.persona_ids or [])}
+    available_personas = (
+        (
+            await db.execute(
+                select(Persona).order_by(
+                    Persona.is_builtin.desc(), Persona.created_at.desc()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    available_personas = [
+        p for p in available_personas if str(p.id) not in roster_id_set
+    ]
+
     messages = (
         (
             await db.execute(
@@ -168,6 +185,7 @@ async def panel_live_view(
             "title": f"{panel.name} — Voice Panel",
             "panel": panel,
             "roster": roster,
+            "available_personas": available_personas,
             "messages": messages,
             "images": images,
             "documents": documents,

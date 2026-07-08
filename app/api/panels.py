@@ -1,13 +1,18 @@
 import uuid
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models import Persona, Panel, PanelMessage, Memory, Asset
-from app.schemas.panels import PanelCreate, PanelResponse, PanelMessageResponse
+from app.schemas.panels import (
+    PanelCreate,
+    PanelResponse,
+    PanelMessageResponse,
+    PanelMemberAdd,
+)
 from app.schemas.assets import AssetResponse
 from app.services.assets import validate_image, ImageValidationError
 from app.services.documents import DocumentExtractionError, extract_upload_text
@@ -109,6 +114,66 @@ async def delete_panel(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     await db.delete(panel)
     await db.commit()
     return
+
+
+# --- Roster management (add / remove agents on a saved panel) ---
+
+
+@router.post(
+    "/{id}/members", response_model=PanelResponse, status_code=status.HTTP_201_CREATED
+)
+async def add_panel_member(
+    id: uuid.UUID, payload: PanelMemberAdd, db: AsyncSession = Depends(get_db)
+):
+    """Add a persona to a saved panel's roster (appended to the end). 404 if the panel
+    or persona is unknown, 409 if the persona is already on the roster."""
+    panel = await _require_panel(id, db)
+    persona = await db.get(Persona, payload.persona_id)
+    if not persona:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found"
+        )
+
+    ids = list(panel.persona_ids or [])
+    if str(payload.persona_id) in ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{persona.name} is already on this panel.",
+        )
+
+    ids.append(str(payload.persona_id))
+    panel.persona_ids = ids  # reassign so SQLAlchemy tracks the JSON change
+    panel.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(panel)
+    return panel
+
+
+@router.delete("/{id}/members/{persona_id}", response_model=PanelResponse)
+async def remove_panel_member(
+    id: uuid.UUID, persona_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+):
+    """Remove a persona from a saved panel's roster. A panel must keep at least one
+    agent (400 otherwise); 404 if the persona is not on the roster."""
+    panel = await _require_panel(id, db)
+    ids = list(panel.persona_ids or [])
+    if str(persona_id) not in ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Persona is not on this panel.",
+        )
+    if len(ids) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A panel must have at least one agent.",
+        )
+
+    ids.remove(str(persona_id))
+    panel.persona_ids = ids
+    panel.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(panel)
+    return panel
 
 
 # --- Panel images (visual context for the whole panel) ---

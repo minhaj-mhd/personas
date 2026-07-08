@@ -14,12 +14,39 @@
     </div>
 
     <!-- Roster chips (fixed for this saved panel) -->
-    <div class="flex flex-wrap gap-2">
-        {% for p in roster %}
-        <span class="text-xs font-mono px-2.5 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300">
-            <i class="fa-solid fa-user-astronaut text-[10px] text-brand-400 mr-1"></i>{{ p.name }}
-        </span>
-        {% endfor %}
+    <!-- Roster management: current agents (removable) + add another -->
+    <div class="space-y-2">
+        <div class="flex items-center justify-between">
+            <span class="text-[10px] uppercase tracking-wider text-slate-500 font-mono">Panelists</span>
+            <span class="text-[10px] text-amber-400/70">Edits apply on the next Start.</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            {% for p in roster %}
+            <span class="group text-xs font-mono pl-2.5 pr-1 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-user-astronaut text-[10px] text-brand-400"></i>{{ p.name }}
+                <button type="button" class="remove-agent w-4 h-4 rounded-full text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 flex items-center justify-center transition-all"
+                    data-persona-id="{{ p.id }}" data-persona-name="{{ p.name }}" title="Remove {{ p.name }}">
+                    <i class="fa-solid fa-xmark text-[9px]"></i>
+                </button>
+            </span>
+            {% endfor %}
+
+            {% if available_personas %}
+            <div class="flex items-center gap-1">
+                <select id="add-agent-select"
+                    class="text-xs bg-slate-950 border border-slate-800 rounded-full pl-3 pr-2 py-1.5 text-slate-300 focus:outline-none focus:border-brand-500/60">
+                    <option value="">+ Add agent…</option>
+                    {% for p in available_personas %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+                <button id="add-agent-btn" type="button"
+                    class="text-xs px-2.5 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-slate-300 hover:text-brand-300 hover:border-brand-500/40 transition-all">
+                    <i class="fa-solid fa-plus text-[10px]"></i>
+                </button>
+            </div>
+            {% endif %}
+        </div>
     </div>
 
     <!-- Controls -->
@@ -178,6 +205,50 @@
         }
         setTimeout(() => { captureBtn.innerHTML = orig; }, 1800);
     });
+
+    // --- Roster management (add / remove agents) ---
+    const panelBase = '/api/panels/' + window.panelConfig.panelId;
+
+    async function rosterRequest(method, url) {
+        const resp = await fetch(url, { method });
+        if (!resp.ok) {
+            let detail = 'Could not update the roster.';
+            try { detail = (await resp.json()).detail || detail; } catch (e) {}
+            alert(detail);
+            return false;
+        }
+        window.location.reload();
+        return true;
+    }
+
+    document.querySelectorAll('.remove-agent').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const name = btn.getAttribute('data-persona-name');
+            if (!confirm('Remove ' + name + ' from this panel?')) return;
+            rosterRequest('DELETE', panelBase + '/members/' + btn.getAttribute('data-persona-id'));
+        });
+    });
+
+    const addSelect = document.getElementById('add-agent-select');
+    const addBtn = document.getElementById('add-agent-btn');
+    if (addBtn && addSelect) {
+        addBtn.addEventListener('click', async () => {
+            const personaId = addSelect.value;
+            if (!personaId) return;
+            const resp = await fetch(panelBase + '/members', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ persona_id: personaId }),
+            });
+            if (!resp.ok) {
+                let detail = 'Could not add the agent.';
+                try { detail = (await resp.json()).detail || detail; } catch (e) {}
+                alert(detail);
+                return;
+            }
+            window.location.reload();
+        });
+    }
 })();
 </script>
 {% endblock %}

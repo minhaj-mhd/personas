@@ -183,3 +183,90 @@ async def test_panel_live_view_404_for_unknown():
     async with await _client() as ac:
         resp = await ac.get(f"/panel/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+# --- Roster management: add / remove agents ---
+
+
+@pytest.mark.asyncio
+async def test_add_panel_member_appends_and_rejects_duplicate():
+    a = await _make_persona("Founder-A")
+    b = await _make_persona("Founder-B")
+    async with await _client() as ac:
+        panel = (
+            await ac.post(
+                "/api/panels", json={"name": "Growing", "persona_ids": [str(a)]}
+            )
+        ).json()
+
+        added = await ac.post(
+            f"/api/panels/{panel['id']}/members", json={"persona_id": str(b)}
+        )
+        assert added.status_code == 201
+        assert added.json()["persona_ids"] == [str(a), str(b)]  # appended, order kept
+
+        # Adding the same persona again is a conflict.
+        dup = await ac.post(
+            f"/api/panels/{panel['id']}/members", json={"persona_id": str(b)}
+        )
+        assert dup.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_add_unknown_persona_and_unknown_panel_404():
+    a = await _make_persona("Solo-Add")
+    async with await _client() as ac:
+        panel = (
+            await ac.post("/api/panels", json={"name": "P", "persona_ids": [str(a)]})
+        ).json()
+        ghost = await ac.post(
+            f"/api/panels/{panel['id']}/members", json={"persona_id": str(uuid.uuid4())}
+        )
+        assert ghost.status_code == 404
+
+        no_panel = await ac.post(
+            f"/api/panels/{uuid.uuid4()}/members", json={"persona_id": str(a)}
+        )
+        assert no_panel.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_remove_panel_member_and_guards():
+    a = await _make_persona("Stay-A")
+    b = await _make_persona("Leave-B")
+    async with await _client() as ac:
+        panel = (
+            await ac.post(
+                "/api/panels",
+                json={"name": "Shrinking", "persona_ids": [str(a), str(b)]},
+            )
+        ).json()
+
+        removed = await ac.delete(f"/api/panels/{panel['id']}/members/{b}")
+        assert removed.status_code == 200
+        assert removed.json()["persona_ids"] == [str(a)]
+
+        # Removing someone not on the roster -> 404.
+        gone = await ac.delete(f"/api/panels/{panel['id']}/members/{b}")
+        assert gone.status_code == 404
+
+        # Cannot remove the last agent.
+        last = await ac.delete(f"/api/panels/{panel['id']}/members/{a}")
+        assert last.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_panel_page_shows_roster_management():
+    a = await _make_persona("OnPanel")
+    await _make_persona("OffPanel")  # available to add
+    async with await _client() as ac:
+        panel = (
+            await ac.post(
+                "/api/panels", json={"name": "Manageable", "persona_ids": [str(a)]}
+            )
+        ).json()
+        resp = await ac.get(f"/panel/{panel['id']}")
+    assert resp.status_code == 200
+    assert "remove-agent" in resp.text  # remove button on the roster chip
+    assert "add-agent-select" in resp.text  # add-agent control
+    assert "OffPanel" in resp.text  # a non-roster persona offered to add

@@ -13,6 +13,10 @@ class PanelCreate(BaseModel):
     )
 
 
+class PanelMemberAdd(BaseModel):
+    persona_id: uuid.UUID = Field(..., description="Persona to add to the panel roster")
+
+
 class PanelResponse(BaseModel):
     id: uuid.UUID
     name: str
