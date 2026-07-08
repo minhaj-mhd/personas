@@ -20,7 +20,9 @@ from app.services.gemini_live import (
     resolve_voice,
     build_system_instruction,
     build_live_config,
+    prime_session_with_images,
 )
+from app.services.assets import get_scope_images
 from app.services.summarizer import SummarizerService
 
 logger = logging.getLogger(__name__)
@@ -109,13 +111,30 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
             await session.commit()
 
     try:
-        print(f"[LIVE] connecting | model={settings.LIVE_MODEL} | voice={voice} | search={enable_search}", flush=True)
+        print(
+            f"[LIVE] connecting | model={settings.LIVE_MODEL} | voice={voice} | search={enable_search}",
+            flush=True,
+        )
         async with gemini_live.connect(config) as session:
             # Send ready event
             await websocket.send_json(
                 {"type": "ready", "voice": voice, "model": settings.LIVE_MODEL}
             )
-            print(f"[LIVE] session READY | model={settings.LIVE_MODEL} | voice={voice}", flush=True)
+            print(
+                f"[LIVE] session READY | model={settings.LIVE_MODEL} | voice={voice}",
+                flush=True,
+            )
+
+            # Prime the session with the persona's uploaded reference images (if any).
+            try:
+                imgs = await get_scope_images(persona_id=persona_id)
+                n = await prime_session_with_images(session, imgs)
+                if n:
+                    print(
+                        f"[LIVE] primed session with {n} reference image(s)", flush=True
+                    )
+            except Exception as e:
+                logger.error(f"Failed to prime live session with images: {e}")
 
             async def handle_tool_call(function_calls):
                 responses = []
@@ -165,85 +184,99 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                 # When the underlying connection closes, receive() raises, the exception
                 # propagates out and the task ends cleanly.
                 while True:
-                  async for resp in session.receive():
-                    if getattr(resp, "go_away", None):
-                        print("[LIVE] downlink: go_away from server", flush=True)
-                        await websocket.send_json({"type": "go_away"})
+                    async for resp in session.receive():
+                        if getattr(resp, "go_away", None):
+                            print("[LIVE] downlink: go_away from server", flush=True)
+                            await websocket.send_json({"type": "go_away"})
 
-                    # Handle raw audio bytes
-                    if getattr(resp, "data", None):
-                        frames_out += 1
-                        if frames_out == 1 or frames_out % 50 == 0:
-                            print(f"[LIVE] downlink: audio frame #{frames_out} ({len(resp.data)} bytes) -> browser", flush=True)
-                        await websocket.send_bytes(resp.data)
+                        # Handle raw audio bytes
+                        if getattr(resp, "data", None):
+                            frames_out += 1
+                            if frames_out == 1 or frames_out % 50 == 0:
+                                print(
+                                    f"[LIVE] downlink: audio frame #{frames_out} ({len(resp.data)} bytes) -> browser",
+                                    flush=True,
+                                )
+                            await websocket.send_bytes(resp.data)
 
-                    sc = getattr(resp, "server_content", None)
-                    if sc:
-                        if getattr(sc, "interrupted", False):
-                            was_interrupted = True
-                            print("[LIVE] downlink: INTERRUPTED (barge-in)", flush=True)
-                            await websocket.send_json({"type": "interrupted"})
+                        sc = getattr(resp, "server_content", None)
+                        if sc:
+                            if getattr(sc, "interrupted", False):
+                                was_interrupted = True
+                                print(
+                                    "[LIVE] downlink: INTERRUPTED (barge-in)",
+                                    flush=True,
+                                )
+                                await websocket.send_json({"type": "interrupted"})
 
-                        # Transcripts arrive as incremental DELTAS (e.g. 'The', ' quick',
-                        # ' brown') with NO per-chunk 'finished' flag. So we ACCUMULATE them
-                        # and stream interim (non-final) updates for the live status chip; the
-                        # FINAL transcript — which the client renders as a chat bubble — is
-                        # emitted once at turn_complete from the accumulated text.
-                        in_t = getattr(sc, "input_transcription", None)
-                        if in_t and getattr(in_t, "text", ""):
-                            current_input_text += in_t.text
-                            await websocket.send_json(
-                                {
-                                    "type": "input_transcript",
-                                    "text": current_input_text,
-                                    "final": False,
-                                }
-                            )
-
-                        out_t = getattr(sc, "output_transcription", None)
-                        if out_t and getattr(out_t, "text", ""):
-                            current_output_text += out_t.text
-                            await websocket.send_json(
-                                {
-                                    "type": "output_transcript",
-                                    "text": current_output_text,
-                                    "final": False,
-                                }
-                            )
-
-                        if getattr(sc, "turn_complete", False):
-                            print(f"[LIVE] downlink: TURN_COMPLETE | user='{current_input_text[:50]}' | model='{current_output_text[:50]}'", flush=True)
-                            # Emit FINAL transcripts so the client commits chat bubbles.
-                            if current_input_text.strip():
+                            # Transcripts arrive as incremental DELTAS (e.g. 'The', ' quick',
+                            # ' brown') with NO per-chunk 'finished' flag. So we ACCUMULATE them
+                            # and stream interim (non-final) updates for the live status chip; the
+                            # FINAL transcript — which the client renders as a chat bubble — is
+                            # emitted once at turn_complete from the accumulated text.
+                            in_t = getattr(sc, "input_transcription", None)
+                            if in_t and getattr(in_t, "text", ""):
+                                current_input_text += in_t.text
                                 await websocket.send_json(
                                     {
                                         "type": "input_transcript",
                                         "text": current_input_text,
-                                        "final": True,
+                                        "final": False,
                                     }
                                 )
-                            if current_output_text.strip():
+
+                            out_t = getattr(sc, "output_transcription", None)
+                            if out_t and getattr(out_t, "text", ""):
+                                current_output_text += out_t.text
                                 await websocket.send_json(
                                     {
                                         "type": "output_transcript",
                                         "text": current_output_text,
-                                        "final": True,
+                                        "final": False,
                                     }
                                 )
-                            await websocket.send_json({"type": "turn_complete"})
-                            # Persist and reset turn state
-                            await persist_turn(
-                                current_input_text, current_output_text, was_interrupted
-                            )
-                            current_input_text = ""
-                            current_output_text = ""
-                            was_interrupted = False
 
-                    # Handle Tools
-                    tc = getattr(resp, "tool_call", None)
-                    if tc and getattr(tc, "function_calls", None):
-                        print(f"[LIVE] downlink: tool_call {[fc.name for fc in tc.function_calls]}", flush=True)
-                        asyncio.create_task(handle_tool_call(tc.function_calls))
+                            if getattr(sc, "turn_complete", False):
+                                print(
+                                    f"[LIVE] downlink: TURN_COMPLETE | user='{current_input_text[:50]}' | model='{current_output_text[:50]}'",
+                                    flush=True,
+                                )
+                                # Emit FINAL transcripts so the client commits chat bubbles.
+                                if current_input_text.strip():
+                                    await websocket.send_json(
+                                        {
+                                            "type": "input_transcript",
+                                            "text": current_input_text,
+                                            "final": True,
+                                        }
+                                    )
+                                if current_output_text.strip():
+                                    await websocket.send_json(
+                                        {
+                                            "type": "output_transcript",
+                                            "text": current_output_text,
+                                            "final": True,
+                                        }
+                                    )
+                                await websocket.send_json({"type": "turn_complete"})
+                                # Persist and reset turn state
+                                await persist_turn(
+                                    current_input_text,
+                                    current_output_text,
+                                    was_interrupted,
+                                )
+                                current_input_text = ""
+                                current_output_text = ""
+                                was_interrupted = False
+
+                        # Handle Tools
+                        tc = getattr(resp, "tool_call", None)
+                        if tc and getattr(tc, "function_calls", None):
+                            print(
+                                f"[LIVE] downlink: tool_call {[fc.name for fc in tc.function_calls]}",
+                                flush=True,
+                            )
+                            asyncio.create_task(handle_tool_call(tc.function_calls))
 
             async def uplink():
                 frames_in = 0
@@ -258,8 +291,13 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                         if frames_in == 1 or frames_in % 50 == 0:
                             buf = array.array("h")
                             buf.frombytes(message["bytes"])
-                            rms = int((sum(s * s for s in buf) / max(len(buf), 1)) ** 0.5)
-                            print(f"[LIVE] uplink: mic frame #{frames_in} ({len(message['bytes'])} bytes, rms={rms}, samples={len(buf)}) -> gemini", flush=True)
+                            rms = int(
+                                (sum(s * s for s in buf) / max(len(buf), 1)) ** 0.5
+                            )
+                            print(
+                                f"[LIVE] uplink: mic frame #{frames_in} ({len(message['bytes'])} bytes, rms={rms}, samples={len(buf)}) -> gemini",
+                                flush=True,
+                            )
                         await session.send_realtime_input(
                             audio=types.Blob(
                                 data=message["bytes"], mime_type="audio/pcm;rate=16000"
@@ -271,7 +309,10 @@ async def live_websocket(websocket: WebSocket, conversation_id: uuid.UUID):
                             if data.get("type") == "client_info":
                                 print(f"[LIVE] client_info: {data}", flush=True)
                             elif data.get("type") in ["stop", "audio_end"]:
-                                print("[LIVE] uplink: stop/audio_end from browser", flush=True)
+                                print(
+                                    "[LIVE] uplink: stop/audio_end from browser",
+                                    flush=True,
+                                )
                                 break
                         except json.JSONDecodeError:
                             pass

@@ -206,3 +206,72 @@ async def test_panel_document_ingest_list_delete():
         cleared = await ac.delete(f"/api/panels/{panel_id}/documents")
         assert cleared.status_code == 204
         assert (await ac.get(f"/api/panels/{panel_id}/documents")).json() == []
+
+
+# --- Injecting reference images into a live session ---
+
+
+class _FakeLiveSession:
+    """Minimal stand-in for a Gemini Live session that records send_client_content."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def send_client_content(self, turns=None, turn_complete=None):
+        self.calls.append((turns, turn_complete))
+
+
+@pytest.mark.asyncio
+async def test_prime_session_with_images_builds_user_turn():
+    from app.services.gemini_live import prime_session_with_images
+
+    sess = _FakeLiveSession()
+    n = await prime_session_with_images(
+        sess, [(PNG_1x1, "image/png"), (PNG_1x1, "image/jpeg")]
+    )
+    assert n == 2
+    assert len(sess.calls) == 1
+    turns, turn_complete = sess.calls[0]
+    assert turn_complete is False  # standing context, not a prompt for a reply
+    assert turns.role == "user"
+    assert len(turns.parts) == 3  # 1 text preface + 2 image parts
+    assert turns.parts[0].text
+    assert turns.parts[1].inline_data.data == PNG_1x1
+    assert turns.parts[1].inline_data.mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_prime_session_with_no_images_is_noop():
+    from app.services.gemini_live import prime_session_with_images
+
+    sess = _FakeLiveSession()
+    assert await prime_session_with_images(sess, []) == 0
+    assert sess.calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_scope_images_persona_and_panel():
+    from app.services.assets import get_scope_images
+
+    pid = await _make_persona("ScopeImgPersona")
+    async with _client() as ac:
+        await ac.post(
+            f"/api/personas/{pid}/images",
+            files={"file": ("p.png", PNG_1x1, "image/png")},
+        )
+        panel = (
+            await ac.post(
+                "/api/panels",
+                json={"name": "ScopeImg Panel", "persona_ids": [str(pid)]},
+            )
+        ).json()
+        await ac.post(
+            f"/api/panels/{panel['id']}/images",
+            files={"file": ("b.png", PNG_1x1, "image/png")},
+        )
+
+    assert await get_scope_images(persona_id=pid) == [(PNG_1x1, "image/png")]
+    assert await get_scope_images(panel_id=uuid.UUID(panel["id"])) == [
+        (PNG_1x1, "image/png")
+    ]
+    assert await get_scope_images() == []  # no scope -> nothing

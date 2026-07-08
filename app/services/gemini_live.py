@@ -47,7 +47,8 @@ def recall_memory_declaration() -> types.FunctionDeclaration:
 
 def route_to_agent_declaration() -> types.FunctionDeclaration:
     """Tool the host/agents call to hand the live floor to another panelist. Robust to
-    mispronounced/abbreviated names because the model resolves the intent, not a regex."""
+    mispronounced/abbreviated names because the model resolves the intent, not a regex.
+    """
     return types.FunctionDeclaration(
         name="route_to_agent",
         description=(
@@ -112,6 +113,30 @@ def build_live_config(
             sliding_window=types.SlidingWindow()
         ),
     )
+
+
+async def prime_session_with_images(session, images: list[tuple[bytes, str]]) -> int:
+    """Inject uploaded reference images into a live session as a persistent user turn
+    (turn_complete=False, so it becomes standing visual context without prompting a
+    reply). `images` is a list of (bytes, mime_type). Returns how many were sent;
+    no-ops on an empty list."""
+    if not images:
+        return 0
+    parts = [
+        types.Part.from_text(
+            text=(
+                f"The user shared {len(images)} reference image(s) below. Use them as "
+                "visual context for this conversation; don't describe them unless asked."
+            )
+        )
+    ]
+    for data, mime_type in images:
+        parts.append(types.Part.from_bytes(data=data, mime_type=mime_type))
+    await session.send_client_content(
+        turns=types.Content(role="user", parts=parts),
+        turn_complete=False,
+    )
+    return len(images)
 
 
 class GeminiLiveService:

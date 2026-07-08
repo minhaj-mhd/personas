@@ -1,10 +1,17 @@
-"""Validation for binary uploads (images) that get injected into live sessions.
+"""Validation + retrieval for binary uploads (images) that get injected into live
+sessions.
 
 Kept separate from documents.py (text/PDF -> RAG) because images travel a different
 path: they are stored as-is and shown to the model as visual frames, never chunked
 or embedded."""
 
 import os
+import uuid
+
+from sqlalchemy import select
+
+from app.db import async_session_maker
+from app.models.asset import Asset
 
 # MIME types Gemini Live accepts as image input.
 ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
@@ -53,3 +60,24 @@ def validate_image(filename: str, content_type: str | None, data: bytes) -> str:
             "Unsupported image type. Upload a PNG, JPEG, WebP, or GIF."
         )
     return mime
+
+
+async def get_scope_images(
+    persona_id: uuid.UUID | None = None,
+    panel_id: uuid.UUID | None = None,
+    limit: int = 8,
+) -> list[tuple[bytes, str]]:
+    """Fetch uploaded images for a persona or a panel as (bytes, mime_type) tuples,
+    oldest first, capped at `limit` — the reference images to prime a live session
+    with. Returns [] if neither scope is given."""
+    if persona_id is None and panel_id is None:
+        return []
+    async with async_session_maker() as db:
+        stmt = select(Asset).where(Asset.kind == "image")
+        if persona_id is not None:
+            stmt = stmt.where(Asset.persona_id == persona_id)
+        else:
+            stmt = stmt.where(Asset.panel_id == panel_id)
+        stmt = stmt.order_by(Asset.created_at.asc()).limit(limit)
+        rows = (await db.execute(stmt)).scalars().all()
+        return [(r.data, r.mime_type) for r in rows]

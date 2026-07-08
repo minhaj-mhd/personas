@@ -29,7 +29,9 @@ from app.services.gemini_live import (
     GeminiLiveService,
     resolve_voice,
     build_live_config,
+    prime_session_with_images,
 )
+from app.services.assets import get_scope_images
 from app.services.panel.router import PanelParticipant
 from app.services.panel.session import PanelState, build_agent_priming
 from app.services.panel.persistence import load_panel, append_panel_message
@@ -186,6 +188,9 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
         }
     )
 
+    # Reference images uploaded to this (saved) panel — shown to whoever speaks.
+    panel_images = await get_scope_images(panel_id=panel_id) if persist else []
+
     stop = False
 
     # 3. Outer loop — one Live session at a time (host, then whichever agent is named).
@@ -219,6 +224,11 @@ async def panel_websocket(websocket: WebSocket, panel_id: uuid.UUID):
 
         try:
             async with gemini_live.connect(config) as session:
+                # Prime this speaker's session with the panel's reference images.
+                try:
+                    await prime_session_with_images(session, panel_images)
+                except Exception as e:
+                    logger.error(f"Panel image priming failed: {e}")
 
                 async def downlink():
                     nonlocal cur_input, cur_output, stop
