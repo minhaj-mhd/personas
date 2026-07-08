@@ -141,7 +141,7 @@
                 <div class="space-y-1.5">
                     <h3 class="font-outfit font-semibold text-sm text-slate-200">Ingest Document</h3>
                     <p class="text-xs text-slate-400 font-light leading-relaxed">
-                        Upload plain text (`.txt`) or markdown (`.md`) files to provide custom domain knowledge.
+                        Upload plain text (`.txt`), markdown (`.md`), or PDF (`.pdf`) files to provide custom domain knowledge.
                     </p>
                 </div>
 
@@ -155,7 +155,7 @@
                         <input 
                             type="file" 
                             name="file" 
-                            accept=".txt,.md" 
+                            accept=".txt,.md,.pdf,application/pdf"
                             required 
                             class="block w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-slate-900 file:text-slate-300 hover:file:bg-slate-850 cursor-pointer bg-slate-950 border border-slate-850 rounded-xl p-1 focus:outline-none"
                         >
@@ -194,8 +194,16 @@
     <!-- Client Script to reload page on successful upload/clear, and redirect on session creation -->
     <script>
         document.body.addEventListener('htmx:afterRequest', function(evt) {
-            if (evt.detail.pathInfo.requestPath.includes('/documents') && evt.detail.successful) {
-                window.location.reload();
+            if (evt.detail.pathInfo.requestPath.includes('/documents')) {
+                if (evt.detail.successful) {
+                    window.location.reload();
+                } else {
+                    let detail = "Upload failed.";
+                    try {
+                        detail = JSON.parse(evt.detail.xhr.responseText).detail || detail;
+                    } catch (e) { /* keep default message */ }
+                    alert(detail);
+                }
             }
             if (evt.detail.pathInfo.requestPath === '/api/conversations' && evt.detail.successful) {
                 try {

@@ -24,7 +24,7 @@ async def clean_database(session):
         await session.execute(delete(Memory))
         await session.execute(delete(Message))
         await session.execute(delete(Conversation))
-        await session.execute(delete(Persona).where(not Persona.is_builtin))
+        await session.execute(delete(Persona).where(Persona.is_builtin == False))  # noqa: E712
         await session.commit()
     except Exception:
         await session.rollback()

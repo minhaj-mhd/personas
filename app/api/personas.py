@@ -6,10 +6,19 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.config import settings
 from app.models import Persona, Memory
-from app.schemas.personas import PersonaCreate, PersonaUpdate, PersonaResponse
+from app.schemas.personas import (
+    PersonaCreate,
+    PersonaUpdate,
+    PersonaResponse,
+    PersonaDraftRequest,
+    PersonaDraft,
+)
 from app.services.prompt_builder import assemble_system_prompt
+from app.services.gemini import GeminiService
 from app.services.memory import MemoryService
+from app.services.documents import DocumentExtractionError, extract_upload_text
 
 router = APIRouter(prefix="/api/personas", tags=["Personas"])
 
@@ -59,6 +68,29 @@ async def create_persona(payload: PersonaCreate, db: AsyncSession = Depends(get_
     await db.commit()
     await db.refresh(persona)
     return persona
+
+
+@router.post("/draft", response_model=PersonaDraft)
+async def draft_persona(payload: PersonaDraftRequest):
+    """
+    Generate a structured persona draft from a natural-language brief using Gemini.
+    Nothing is persisted: the caller reviews/edits the returned fields, then submits
+    POST /api/personas to actually create the voice agent.
+    """
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Gemini API key is not configured; cannot generate a draft.",
+        )
+
+    service = GeminiService()
+    try:
+        return await service.draft_persona(payload.brief)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to generate persona draft: {e}",
+        )
 
 
 @router.get("/{id}", response_model=PersonaResponse)
@@ -151,7 +183,7 @@ async def upload_persona_document(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Upload a plain text or markdown file or paste raw text to ingest as RAG memory chunks for a persona.
+    Upload a text, markdown, or PDF file or paste raw text to ingest as RAG memory chunks for a persona.
     """
     # Verify persona exists
     persona_stmt = select(Persona).where(Persona.id == id)
@@ -165,8 +197,11 @@ async def upload_persona_document(
     filename = ""
     if file:
         content_bytes = await file.read()
-        content = content_bytes.decode("utf-8")
-        filename = file.filename
+        filename = file.filename or "upload"
+        try:
+            content = extract_upload_text(filename, file.content_type, content_bytes)
+        except DocumentExtractionError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     elif raw_text:
         content = raw_text
         now = datetime.now()
@@ -178,7 +213,15 @@ async def upload_persona_document(
         )
 
     memory_service = MemoryService()
-    await memory_service.ingest_document(persona_id=id, filename=filename, text=content)
+    try:
+        await memory_service.ingest_document(
+            persona_id=id, filename=filename, text=content
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to embed document (is Ollama running?): {e}",
+        )
 
     return {"status": "success", "filename": filename}
 

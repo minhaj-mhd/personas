@@ -17,6 +17,35 @@
             </p>
         </div>
 
+        <!-- AI Draft Assistant -->
+        <div class="rounded-2xl border border-brand-500/30 bg-brand-950/30 p-5 space-y-3">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-wand-magic-sparkles text-brand-400"></i>
+                <h2 class="text-sm font-semibold text-slate-200">Draft with AI</h2>
+            </div>
+            <p class="text-xs text-slate-400">
+                Describe the voice agent you want in a sentence or two. The AI fills in the fields below —
+                then review, tweak, and save.
+            </p>
+            <textarea
+                id="ai-brief"
+                rows="2"
+                placeholder="E.g., A calm meditation guide who leads short breathing exercises and speaks slowly."
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-brand-500/80 transition-colors resize-none"
+            ></textarea>
+            <div class="flex items-center gap-3">
+                <button
+                    type="button"
+                    id="ai-generate-btn"
+                    class="px-4 py-2 rounded-xl bg-brand-600/80 hover:bg-brand-500 text-white text-sm font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <i class="fa-solid fa-wand-magic-sparkles" id="ai-generate-icon"></i>
+                    <span id="ai-generate-label">Generate fields</span>
+                </button>
+                <span id="ai-status" class="text-xs text-slate-400"></span>
+            </div>
+        </div>
+
         <!-- Form -->
         <form 
             {% if action == "create" %}
@@ -169,4 +198,97 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const btn = document.getElementById("ai-generate-btn");
+    const label = document.getElementById("ai-generate-label");
+    const icon = document.getElementById("ai-generate-icon");
+    const statusEl = document.getElementById("ai-status");
+    const briefEl = document.getElementById("ai-brief");
+
+    function setStatus(msg, kind) {
+        statusEl.textContent = msg || "";
+        statusEl.className =
+            "text-xs " +
+            (kind === "error"
+                ? "text-red-400"
+                : kind === "success"
+                ? "text-emerald-400"
+                : "text-slate-400");
+    }
+
+    function setField(id, value) {
+        const el = document.getElementById(id);
+        if (el && value !== undefined && value !== null) el.value = value;
+    }
+
+    function applyDraft(d) {
+        setField("name", d.name);
+        setField("description", d.description);
+        setField(
+            "personality_traits",
+            Array.isArray(d.personality_traits)
+                ? d.personality_traits.join(", ")
+                : d.personality_traits
+        );
+        setField("speaking_style", d.speaking_style);
+        setField("goals", d.goals);
+        setField("constraints", d.constraints);
+        setField("domain_expertise", d.domain_expertise);
+        setField("voice", d.voice);
+
+        if (typeof d.temperature === "number") {
+            const temp = document.getElementById("temperature");
+            const tempVal = document.getElementById("temp-val");
+            if (temp) temp.value = d.temperature;
+            if (tempVal) tempVal.innerText = d.temperature;
+        }
+    }
+
+    async function generate() {
+        const brief = (briefEl.value || "").trim();
+        if (brief.length < 3) {
+            setStatus("Add a short description first.", "error");
+            return;
+        }
+
+        btn.disabled = true;
+        label.textContent = "Generating…";
+        icon.className = "fa-solid fa-spinner fa-spin";
+        setStatus("Designing your persona…", "info");
+
+        try {
+            const resp = await fetch("/api/personas/draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ brief }),
+            });
+
+            if (!resp.ok) {
+                let detail = "Request failed (" + resp.status + ")";
+                try {
+                    const err = await resp.json();
+                    if (err && err.detail) detail = err.detail;
+                } catch (_) {}
+                throw new Error(detail);
+            }
+
+            const draft = await resp.json();
+            applyDraft(draft);
+            setStatus("Draft ready — review the fields below before saving.", "success");
+        } catch (e) {
+            setStatus(e.message || "Something went wrong.", "error");
+        } finally {
+            btn.disabled = false;
+            label.textContent = "Generate fields";
+            icon.className = "fa-solid fa-wand-magic-sparkles";
+        }
+    }
+
+    btn.addEventListener("click", generate);
+})();
+</script>
 {% endblock %}

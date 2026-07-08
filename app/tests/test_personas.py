@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -6,6 +8,7 @@ from sqlalchemy import select, delete
 from app.db import async_session_maker
 from app.main import app
 from app.models.persona import Persona
+from app.schemas.personas import PersonaDraft
 
 
 @pytest_asyncio.fixture
@@ -153,6 +156,52 @@ async def test_update_custom_persona(db_session):
         assert "PERSONALITY: happy, cheerful" in data["system_prompt"]
     finally:
         await clean_custom_personas(db_session)
+
+
+@pytest.mark.asyncio
+async def test_draft_persona_returns_structured_fields():
+    """
+    The AI draft endpoint returns structured persona fields (Gemini is mocked so no
+    real API call is made) and persists nothing.
+    """
+    fake_draft = PersonaDraft(
+        name="Sage",
+        description="a calm meditation guide for stressed beginners",
+        personality_traits=["calm", "gentle", "grounding"],
+        speaking_style="Slow, soft, with long pauses and short sentences.",
+        goals="Lead short breathing exercises and help the user relax.",
+        constraints="Not a medical professional; never diagnose or treat.",
+        domain_expertise="Mindfulness, breathwork, guided meditation.",
+        voice="Leda",
+        temperature=0.85,
+    )
+
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.api.personas.GeminiService.draft_persona",
+        new=AsyncMock(return_value=fake_draft),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/personas/draft",
+                json={"brief": "A calm meditation guide for beginners"},
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Sage"
+    assert data["voice"] == "Leda"
+    assert data["personality_traits"] == ["calm", "gentle", "grounding"]
+    assert data["temperature"] == 0.85
+
+
+@pytest.mark.asyncio
+async def test_draft_persona_rejects_empty_brief():
+    """A blank/too-short brief is rejected by validation before any Gemini call."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.post("/api/personas/draft", json={"brief": ""})
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

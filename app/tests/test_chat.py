@@ -10,6 +10,7 @@ from app.main import app
 from app.models import Persona, Conversation, Message
 from app.api.voice_ws import chat_websocket
 from app.services.gemini import GeminiService
+from app.tests.test_memory import mock_httpx_post
 
 
 @pytest_asyncio.fixture
@@ -24,26 +25,10 @@ async def clean_database(session):
     try:
         await session.execute(delete(Message))
         await session.execute(delete(Conversation))
-        await session.execute(delete(Persona).where(not Persona.is_builtin))
+        await session.execute(delete(Persona).where(Persona.is_builtin == False))  # noqa: E712
         await session.commit()
     except Exception:
         await session.rollback()
-
-
-class MockEmbeddingValues:
-    def __init__(self):
-        self.values = [0.01] * 768
-
-
-class MockEmbeddingsResponse:
-    def __init__(self, count=1):
-        self.embeddings = [MockEmbeddingValues() for _ in range(count)]
-
-
-async def mock_embed_content(self, model, contents, config=None):
-    if isinstance(contents, list):
-        return MockEmbeddingsResponse(len(contents))
-    return MockEmbeddingsResponse(1)
 
 
 class MockWebSocket:
@@ -150,8 +135,10 @@ async def test_websocket_chat_streaming(db_session):
             yield " "
             yield "more"
 
-        # Use patch to mock AsyncModels.embed_content and GeminiService.generate_chat_stream
-        with patch("google.genai.models.AsyncModels.embed_content", mock_embed_content):
+        # Mock the Ollama embeddings HTTP call and GeminiService.generate_chat_stream
+        # so the handler never does real network I/O (it must finish within the
+        # MockWebSocket 2s disconnect window).
+        with patch("app.services.embeddings.httpx.AsyncClient.post", mock_httpx_post):
             with patch.object(
                 GeminiService, "generate_chat_stream", mock_generate_chat_stream
             ):

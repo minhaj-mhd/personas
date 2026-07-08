@@ -5,7 +5,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Database URL configuration
     DATABASE_URL: str = "postgresql+asyncpg://personas:personas@localhost:5432/personas"
+    # Set by the test suite (conftest.py) before app modules import. Redirects all DB
+    # access to an isolated "<dbname>_test" database so tests never touch dev data.
+    TESTING: bool = False
     GEMINI_API_KEY: Optional[str] = None
+
+    def model_post_init(self, __context) -> None:
+        if self.TESTING and not self.DATABASE_URL.endswith("_test"):
+            base, _, dbname = self.DATABASE_URL.rpartition("/")
+            self.DATABASE_URL = f"{base}/{dbname}_test"
 
     # Model configuration
     EMBED_MODEL: str = "text-embedding-004"

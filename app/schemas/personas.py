@@ -1,7 +1,13 @@
 import uuid
 from datetime import datetime
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Literal
 from pydantic import BaseModel, ConfigDict, Field
+
+# Prebuilt Gemini Live voices offered on the persona form. Kept in sync with
+# persona_form.html's <select> and gemini_live.VALID_VOICES.
+VoiceName = Literal[
+    "Puck", "Charon", "Fenrir", "Orus", "Aoede", "Kore", "Leda", "Zephyr"
+]
 
 
 class PersonaBase(BaseModel):
@@ -54,3 +60,44 @@ class PersonaResponse(PersonaBase):
 
     # Enable SQLAlchemy model compatibility
     model_config = ConfigDict(from_attributes=True)
+
+
+class PersonaDraftRequest(BaseModel):
+    """Free-text brief the user provides to have the AI design a persona."""
+
+    brief: str = Field(
+        ...,
+        min_length=3,
+        max_length=2000,
+        description="Natural-language description of the voice agent to design",
+    )
+
+
+class PersonaDraft(BaseModel):
+    """AI-generated draft of the persona form fields, for the user to review and edit
+    before creating the persona. Doubles as the Gemini structured-output schema."""
+
+    name: str = Field(..., description="A fitting name for the persona")
+    description: str = Field(
+        ...,
+        description="One concise, lowercase sentence; rendered as 'You are {name}, {description}.'",
+    )
+    personality_traits: List[str] = Field(
+        ..., description="3-5 lowercase adjective keywords"
+    )
+    speaking_style: str = Field(
+        ..., description="How the persona sounds out loud: pace, tone, sentence length"
+    )
+    goals: str = Field(..., description="What the persona actively does for the user")
+    constraints: str = Field(
+        ..., description="What it must never do, plus any needed safety guardrails"
+    )
+    domain_expertise: str = Field(
+        ..., description="Comma-separated fields of deep knowledge"
+    )
+    voice: VoiceName = Field(
+        ..., description="The prebuilt Gemini Live voice that best fits the persona"
+    )
+    temperature: float = Field(
+        0.8, description="Sampling temperature; 0.6-0.8 focused, 0.85-1.0 expressive"
+    )

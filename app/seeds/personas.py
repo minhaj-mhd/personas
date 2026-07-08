@@ -109,17 +109,12 @@ BUILTIN_PERSONAS = [
 
 async def seed_builtins():
     """
-    Deletes existing built-in personas and seeds the default set.
+    Upserts the default built-in personas by name. Existing rows are updated in
+    place so their UUIDs — and the conversations, messages, and memories that
+    cascade from them — survive re-seeding.
     """
     async with async_session_maker() as session:
-        # Idempotent: delete all currently seeded builtins first
-        stmt = select(Persona).where(Persona.is_builtin)
-        result = await session.execute(stmt)
-        existing = result.scalars().all()
-        for p in existing:
-            await session.delete(p)
-
-        # Add all built-in definitions
+        created, updated = 0, 0
         for data in BUILTIN_PERSONAS:
             system_prompt = assemble_system_prompt(
                 name=data["name"],
@@ -131,23 +126,24 @@ async def seed_builtins():
                 domain_expertise=data["domain_expertise"],
             )
 
-            persona = Persona(
-                name=data["name"],
-                description=data["description"],
-                system_prompt=system_prompt,
-                personality_traits=data["personality_traits"],
-                speaking_style=data["speaking_style"],
-                goals=data["goals"],
-                constraints=data["constraints"],
-                domain_expertise=data["domain_expertise"],
-                voice=data["voice"],
-                temperature=data["temperature"],
-                is_builtin=data["is_builtin"],
+            stmt = select(Persona).where(
+                Persona.name == data["name"], Persona.is_builtin
             )
-            session.add(persona)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+            if existing:
+                for key, value in data.items():
+                    setattr(existing, key, value)
+                existing.system_prompt = system_prompt
+                updated += 1
+            else:
+                session.add(Persona(system_prompt=system_prompt, **data))
+                created += 1
 
         await session.commit()
-        print(f"Successfully seeded {len(BUILTIN_PERSONAS)} built-in personas!")
+        print(
+            f"Seeded built-in personas: {created} created, {updated} updated "
+            "(existing UUIDs and their conversations preserved)."
+        )
 
 
 if __name__ == "__main__":
