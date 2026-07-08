@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.config import settings
-from app.models import Persona, Memory
+from app.models import Persona, Memory, Asset
 from app.schemas.personas import (
     PersonaCreate,
     PersonaUpdate,
@@ -15,10 +15,12 @@ from app.schemas.personas import (
     PersonaDraftRequest,
     PersonaDraft,
 )
+from app.schemas.assets import AssetResponse
 from app.services.prompt_builder import assemble_system_prompt
 from app.services.gemini import GeminiService
 from app.services.memory import MemoryService
 from app.services.documents import DocumentExtractionError, extract_upload_text
+from app.services.assets import validate_image, ImageValidationError
 
 router = APIRouter(prefix="/api/personas", tags=["Personas"])
 
@@ -258,3 +260,53 @@ async def delete_persona_documents(id: uuid.UUID, db: AsyncSession = Depends(get
     await db.execute(stmt)
     await db.commit()
     return
+
+
+@router.post(
+    "/{id}/images", response_model=AssetResponse, status_code=status.HTTP_201_CREATED
+)
+async def upload_persona_image(
+    id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload an image (PNG/JPEG/WebP/GIF) for a persona. Stored as an Asset and shown
+    to the persona as a visual frame at the start of a live session.
+    """
+    persona = await db.get(Persona, id)
+    if not persona:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found"
+        )
+
+    data = await file.read()
+    try:
+        mime = validate_image(file.filename or "image", file.content_type, data)
+    except ImageValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    asset = Asset(
+        persona_id=id,
+        kind="image",
+        filename=file.filename or "image",
+        mime_type=mime,
+        data=data,
+    )
+    db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
+    return asset
+
+
+@router.get("/{id}/images", response_model=List[AssetResponse])
+async def list_persona_images(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """List a persona's uploaded images (metadata only), newest first."""
+    stmt = (
+        select(Asset)
+        .where(Asset.persona_id == id)
+        .where(Asset.kind == "image")
+        .order_by(Asset.created_at.desc())
+    )
+    res = await db.execute(stmt)
+    return res.scalars().all()

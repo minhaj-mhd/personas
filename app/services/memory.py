@@ -47,10 +47,17 @@ class MemoryService:
         self.embeddings_service = EmbeddingsService()
 
     async def ingest_document(
-        self, persona_id: uuid.UUID, filename: str, text: str
+        self,
+        persona_id: uuid.UUID,
+        filename: str,
+        text: str,
+        extra_metadata: dict | None = None,
     ) -> None:
         """
         Ingests a document text: chunks it, embeds each chunk, and saves to database.
+
+        `extra_metadata` is merged into each chunk's metadata — used to tag panel-scoped
+        documents with their panel_id so they can be listed/cleared per panel.
         """
         chunks = chunk_text(text)
         if not chunks:
@@ -61,12 +68,15 @@ class MemoryService:
 
         async with async_session_maker() as session:
             for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
+                metadata = {"source": filename, "chunk_index": i}
+                if extra_metadata:
+                    metadata.update(extra_metadata)
                 memory = Memory(
                     persona_id=persona_id,
                     memory_type="document",
                     content=chunk,
                     embedding=emb,
-                    metadata_={"source": filename, "chunk_index": i},
+                    metadata_=metadata,
                 )
                 session.add(memory)
             await session.commit()
