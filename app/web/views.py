@@ -7,7 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import Persona, Conversation, Message, Memory, Panel, PanelMessage
+from app.models import (
+    Persona,
+    Conversation,
+    Message,
+    Memory,
+    Panel,
+    PanelMessage,
+    Asset,
+)
 
 router = APIRouter(tags=["Web Views"])
 
@@ -121,6 +129,38 @@ async def panel_live_view(
         .all()
     )
 
+    # Panel images (visual context) and panel-scoped documents (shared RAG).
+    images = (
+        (
+            await db.execute(
+                select(Asset)
+                .where(Asset.panel_id == panel_id)
+                .where(Asset.kind == "image")
+                .order_by(Asset.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    doc_meta = (
+        (
+            await db.execute(
+                select(Memory.metadata_)
+                .where(Memory.persona_id.in_(panel.persona_ids or []))
+                .where(Memory.memory_type == "document")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    documents = sorted(
+        {
+            m["source"]
+            for m in doc_meta
+            if m and m.get("panel_id") == str(panel_id) and "source" in m
+        }
+    )
+
     return templates.TemplateResponse(
         request=request,
         name="panel.html",
@@ -129,6 +169,8 @@ async def panel_live_view(
             "panel": panel,
             "roster": roster,
             "messages": messages,
+            "images": images,
+            "documents": documents,
         },
     )
 
@@ -224,9 +266,24 @@ async def persona_detail(
     metadata_list = res_docs.scalars().all()
     sources = set()
     for meta in metadata_list:
-        if meta and "source" in meta:
+        # Persona-scoped docs only (panel docs carry a panel_id tag).
+        if meta and "source" in meta and not meta.get("panel_id"):
             sources.add(meta["source"])
     documents = sorted(list(sources))
+
+    # Uploaded images (visual context for the persona's live sessions).
+    images = (
+        (
+            await db.execute(
+                select(Asset)
+                .where(Asset.persona_id == id)
+                .where(Asset.kind == "image")
+                .order_by(Asset.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     return templates.TemplateResponse(
         request=request,
@@ -236,6 +293,7 @@ async def persona_detail(
             "persona": persona,
             "conversations": conversations,
             "documents": documents,
+            "images": images,
         },
     )
 

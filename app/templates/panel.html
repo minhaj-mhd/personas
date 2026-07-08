@@ -39,7 +39,7 @@
     </div>
 
     <!-- Transcript (persisted history + live turns) -->
-    <div id="panel-transcript" class="glass-panel rounded-2xl p-4 h-[55vh] overflow-y-auto space-y-2 text-sm leading-relaxed">
+    <div id="panel-transcript" class="glass-panel rounded-2xl p-4 h-[45vh] overflow-y-auto space-y-2 text-sm leading-relaxed">
         {% for m in messages %}
         <div>
             <span class="font-semibold {% if m.speaker == 'You' %}text-slate-300{% else %}text-brand-400{% endif %}">{{ m.speaker }}:</span>
@@ -48,6 +48,15 @@
         {% else %}
         <p id="empty-transcript" class="text-xs text-slate-500 italic">No conversation yet. Press Start and greet the host.</p>
         {% endfor %}
+    </div>
+
+    <!-- Uploads: shared documents (RAG across the roster) + images (visual context) -->
+    <div class="space-y-3">
+        <h2 class="font-outfit font-bold text-slate-300 uppercase text-xs tracking-widest border-l-2 border-cyan-500 pl-3">
+            Knowledge &amp; Media
+        </h2>
+        {% set upload_base = "/api/panels/" ~ panel.id %}
+        {% include "partials/uploads_manager.html" %}
     </div>
 </div>
 {% endblock %}

@@ -127,6 +127,43 @@ async def test_panel_image_upload_and_list():
         assert len(listing.json()) == 1
 
 
+# --- Tabbed uploads UI renders on both single-agent and panel pages ---
+
+
+@pytest.mark.asyncio
+async def test_persona_page_renders_uploads_tabs():
+    pid = await _make_persona("TabbedOwner")
+    async with _client() as ac:
+        # Attach an image so it renders inside the Images tab too.
+        await ac.post(
+            f"/api/personas/{pid}/images",
+            files={"file": ("a.png", PNG_1x1, "image/png")},
+        )
+        resp = await ac.get(f"/personas/{pid}")
+    assert resp.status_code == 200
+    assert "data-uploads-manager" in resp.text
+    assert 'data-tab-btn="documents"' in resp.text
+    assert 'data-tab-btn="images"' in resp.text
+    assert f"/api/personas/{pid}/documents" in resp.text
+    assert f"/api/personas/{pid}/images" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_panel_page_renders_uploads_tabs():
+    a = await _make_persona("TabbedPanelPersona")
+    async with _client() as ac:
+        panel = (
+            await ac.post(
+                "/api/panels", json={"name": "Tabbed Panel", "persona_ids": [str(a)]}
+            )
+        ).json()
+        resp = await ac.get(f"/panel/{panel['id']}")
+    assert resp.status_code == 200
+    assert "data-uploads-manager" in resp.text
+    assert f"/api/panels/{panel['id']}/documents" in resp.text
+    assert f"/api/panels/{panel['id']}/images" in resp.text
+
+
 @pytest.mark.asyncio
 async def test_panel_document_ingest_list_delete():
     a = await _make_persona("PanelDocPersona")
