@@ -1,13 +1,16 @@
+import httpx
 import pytest
 import pytest_asyncio
 from unittest.mock import patch
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import select
 
+from app.config import settings
 from app.db import async_session_maker
 from app.main import app
 from app.models import Persona, Conversation, Message, Memory
 from app.services.memory import chunk_text, MemoryService
+from app.services.summarizer import SummarizerService
 from app.services.prompt_builder import inject_memories_into_prompt
 
 
@@ -174,6 +177,104 @@ async def test_rolling_summarization_and_facts_extraction(db_session):
             await db_session.refresh(conv)
             assert conv.last_summarized_message_id == m3.id
 
+    finally:
+        await clean_database(db_session)
+
+
+def _make_counting_post(fail_on_chat_call: int | None = None):
+    """Returns an httpx.AsyncClient.post mock that serves valid summary/embed responses
+    and (optionally) raises an empty-message ReadTimeout on the Nth /api/chat call — the
+    exact failure that stalled real summarization. Exposes a mutable call counter."""
+    state = {"chat_calls": 0}
+
+    async def _post(self, url, json=None, **kwargs):
+        url_str = str(url)
+        if "/api/embed" in url_str:
+            inputs = json.get("input", [])
+            return MockHttpxResponse({"embeddings": [[0.01] * 768 for _ in inputs]})
+        if "/api/chat" in url_str:
+            state["chat_calls"] += 1
+            if fail_on_chat_call is not None and state["chat_calls"] == fail_on_chat_call:
+                raise httpx.ReadTimeout("")
+            return MockHttpxResponse(
+                {"message": {"content": '{"summary": "S", "facts": ["F"]}'}}
+            )
+        return await original_post(self, url, json=json, **kwargs)
+
+    return _post, state
+
+
+async def _seed_conversation(db_session, n_messages: int):
+    persona = Persona(name="Batcher", system_prompt="hi", is_builtin=False)
+    db_session.add(persona)
+    await db_session.commit()
+    conv = Conversation(persona_id=persona.id, title="Backlog")
+    db_session.add(conv)
+    await db_session.commit()
+    msgs = [
+        Message(conversation_id=conv.id, role="user", content=f"message {i}")
+        for i in range(n_messages)
+    ]
+    db_session.add_all(msgs)
+    await db_session.commit()
+    return conv, msgs
+
+
+@pytest.mark.asyncio
+async def test_summarization_drains_backlog_in_batches(db_session):
+    """A backlog larger than SUMMARIZE_BATCH_SIZE is processed in multiple bounded
+    Ollama calls (not one oversized request), draining fully to the last message."""
+    try:
+        conv, msgs = await _seed_conversation(db_session, 6)
+        post, state = _make_counting_post()
+        with patch.object(settings, "SUMMARIZE_BATCH_SIZE", 2), patch(
+            "app.services.summarizer.httpx.AsyncClient.post", post
+        ):
+            await SummarizerService().maybe_summarize(conv.id, force=True)
+
+        # 6 messages / batch of 2 => 3 separate chat calls, one summary each.
+        assert state["chat_calls"] == 3
+        summaries = (
+            await db_session.execute(
+                select(Memory)
+                .where(Memory.conversation_id == conv.id)
+                .where(Memory.memory_type == "summary")
+            )
+        ).scalars().all()
+        assert len(summaries) == 3
+        # Watermark reached the final message — the whole backlog drained.
+        await db_session.refresh(conv)
+        assert conv.last_summarized_message_id == msgs[-1].id
+    finally:
+        await clean_database(db_session)
+
+
+@pytest.mark.asyncio
+async def test_summarization_progress_survives_partial_failure(db_session):
+    """If a later batch fails, the watermark and memories from earlier committed batches
+    survive — so the backlog shrinks instead of being retried whole every time (the bug
+    that let a 362-message backlog build up and time out forever)."""
+    try:
+        conv, msgs = await _seed_conversation(db_session, 6)
+        # Fail on the 2nd chat call: batch 1 (msgs 0-1) commits, batch 2 aborts.
+        post, state = _make_counting_post(fail_on_chat_call=2)
+        with patch.object(settings, "SUMMARIZE_BATCH_SIZE", 2), patch(
+            "app.services.summarizer.httpx.AsyncClient.post", post
+        ):
+            await SummarizerService().maybe_summarize(conv.id, force=True)
+
+        assert state["chat_calls"] == 2  # stopped after the failing batch, didn't push on
+        summaries = (
+            await db_session.execute(
+                select(Memory)
+                .where(Memory.conversation_id == conv.id)
+                .where(Memory.memory_type == "summary")
+            )
+        ).scalars().all()
+        assert len(summaries) == 1  # batch 1 persisted despite batch 2 failing
+        # Watermark advanced to the end of the successful batch, not rolled back to start.
+        await db_session.refresh(conv)
+        assert conv.last_summarized_message_id == msgs[1].id
     finally:
         await clean_database(db_session)
 

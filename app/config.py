@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     # Memory configuration
     SHORT_TERM_MESSAGES: int = 12
     SUMMARIZE_THRESHOLD: int = 10
+    # Caps how many unsummarized messages go into a single Ollama call. Without this, a
+    # large backlog (e.g. a long-running Live session, or one where a prior attempt
+    # failed and left messages unsummarized) gets stuffed into one request and reliably
+    # times out — which then leaves the backlog even bigger for the next attempt.
+    # Measured on dev hardware: a 30-message batch (~6.1k prompt tokens) took ~114s
+    # against local qwen3:8b — right at the old 120s timeout with no margin. 15 keeps
+    # each call comfortably inside the timeout below.
+    SUMMARIZE_BATCH_SIZE: int = 15
+    # Per-call timeout (seconds) for the Ollama summarization request. Generous margin
+    # over a batch's measured runtime so a momentarily busy GPU doesn't spuriously fail.
+    SUMMARIZE_TIMEOUT: float = 180.0
     RETRIEVE_TOP_K: int = 5
 
     # Voice configuration

@@ -32,14 +32,18 @@ class SummarizerService:
         """
         Asynchronously checks if a conversation session has enough unsummarized turns,
         updates the narrative summary, extracts facts/preferences, and embeds them.
+
+        Processes the backlog in bounded batches (SUMMARIZE_BATCH_SIZE messages per
+        Ollama call) instead of one shot: a large backlog stuffed into a single request
+        reliably times out, which leaves the watermark stuck and the backlog even bigger
+        on the next attempt. Each batch commits its own summary/facts/watermark update,
+        so progress survives even if a later batch fails.
         """
         async with async_session_maker() as session:
-            # 1. Load the conversation details
             conversation = await session.get(Conversation, conversation_id)
             if not conversation:
                 return
 
-            # 2. Query all messages chronologically
             stmt = (
                 select(Message)
                 .where(Message.conversation_id == conversation_id)
@@ -63,7 +67,23 @@ class SummarizerService:
                 # Unsummarized block size is below threshold
                 return
 
-            # 3. Fetch previous narrative summary if any exists
+        batch_size = settings.SUMMARIZE_BATCH_SIZE
+        offset = 0
+        while offset < len(unsummarized):
+            batch = unsummarized[offset : offset + batch_size]
+            if not await self._summarize_batch(conversation_id, batch):
+                break
+            offset += len(batch)
+
+    async def _summarize_batch(
+        self, conversation_id: uuid.UUID, batch: list[Message]
+    ) -> bool:
+        """Summarizes one bounded batch of messages, committing its own summary/facts/
+        watermark update. Returns True on success, False (after logging) on failure."""
+        async with async_session_maker() as session:
+            conversation = await session.get(Conversation, conversation_id)
+
+            # Fetch previous narrative summary if any exists
             prev_summary = ""
             summary_stmt = (
                 select(Memory)
@@ -77,9 +97,9 @@ class SummarizerService:
             if latest_summary_mem:
                 prev_summary = latest_summary_mem.content
 
-            # 4. Format messages for summarization prompt
+            # Format messages for summarization prompt
             formatted_history = ""
-            for msg in unsummarized:
+            for msg in batch:
                 formatted_history += f"{msg.role}: {msg.content}\n"
 
             prompt = "You are a rolling conversation summarizer and fact extractor.\n"
@@ -94,7 +114,7 @@ class SummarizerService:
 
             try:
                 # Request structured JSON response from Ollama
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                async with httpx.AsyncClient(timeout=settings.SUMMARIZE_TIMEOUT) as client:
                     resp = await client.post(
                         f"{self.base_url}/api/chat",
                         json={
@@ -113,7 +133,7 @@ class SummarizerService:
                 content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
                 result = SummaryOutput.model_validate_json(content)
 
-                # 5. Add the new narrative summary to memories table
+                # Add the new narrative summary to memories table
                 new_summary_mem = Memory(
                     conversation_id=conversation_id,
                     persona_id=conversation.persona_id,
@@ -123,7 +143,7 @@ class SummarizerService:
                 )
                 session.add(new_summary_mem)
 
-                # 6. Add individual facts with vector embeddings to memories table
+                # Add individual facts with vector embeddings to memories table
                 if result.facts:
                     embeddings = await self.embeddings_service.embed_texts(result.facts)
                     for fact, emb in zip(result.facts, embeddings):
@@ -137,16 +157,19 @@ class SummarizerService:
                         )
                         session.add(fact_mem)
 
-                # 7. Update conversation watermark to the last message of the block
-                conversation.last_summarized_message_id = unsummarized[-1].id
+                # Update conversation watermark to the last message of this batch
+                conversation.last_summarized_message_id = batch[-1].id
                 conversation.updated_at = datetime.now(timezone.utc)
                 await session.commit()
                 logger.info(
-                    f"Rolling summarization executed successfully for conversation: {conversation_id}"
+                    f"Rolling summarization executed successfully for conversation: "
+                    f"{conversation_id} ({len(batch)} messages)"
                 )
+                return True
             except Exception as e:
                 await session.rollback()
                 # logger.exception logs the full traceback + exception type even when
                 # str(e) is empty (e.g. an httpx/Ollama error with no message), which a
                 # bare f"...: {e}" would swallow into a blank line.
                 logger.exception(f"Rolling summarization failed: {e!r}")
+                return False
