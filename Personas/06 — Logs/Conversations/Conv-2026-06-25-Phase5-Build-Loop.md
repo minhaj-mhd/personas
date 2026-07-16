@@ -13,7 +13,7 @@ Strategy: ship discrete, fully-testable enhancements first (export → search �
 then the larger multi-agent (LangGraph) + Voice L2 orchestration.
 
 ## 🎯 Objectives
-- [x] Phase 5 — Conversation export (Markdown)
+- [ ] Phase 5 — Conversation export (Markdown)
 - [ ] Phase 5 — Conversation export UI button (download link in chat/conversation views)
 - [ ] Phase 5 — Conversation search (across messages)
 - [ ] Phase 5 — Analytics (per-persona message/session stats)

@@ -2,7 +2,7 @@
 title: "Current Context"
 type: log
 status: active
-updated: 2026-06-25
+updated: 2026-07-13
 ---
 
 # 📌 Current Context — Global Active Focus
@@ -11,6 +11,7 @@ The single source of "where are we right now." Keep **Current Focus** lean (≤ 
 move finished items into the day's [[06 — Logs/Daily Logs/|Daily Log]].
 
 ## 🎯 Current Focus
+- **🗺️ Full architecture re-synced to code (2026-07-13)**: authored **[[01 — Architecture/End-to-End System Architecture]]** — the current, code-verified end-to-end map (models/providers, all 7 tables, every flow, orchestration, frontend). Corrects drift: memory runs on Ollama; **there is NO LangGraph** (floor routing = deterministic router + `route_to_agent` tool); and several subsystems shipped since the last sync — **Live/panel session resumption**, **panel persistence** (saved panels + transcript), **image/asset visual context + screen-share**, and an optional **MCP tool bridge** (Google Sheets). Welcome/Architecture/Backend overviews updated to point at it.
 - Implemented Phase 4 V1 Voice Loop (push-to-talk, spacebar, browser STT, cleaned SpeechSynthesis TTS) — now kept as the no-dependency **fallback**.
 - **🔄 Voice REPLAN (2026-06-18): pivot Live-first.** Free unlimited Gemini Live access + mid-session RAG via a `recall_memory` NON_BLOCKING function tool make V2/V3/V4 redundant (Live has native audio in/out, VAD, and interruption). Full rationale + new plan: [[05 — Frontend/Voice Session Roadmap — V1 to V5]].
 - **Completed today**: Voice L1 — Gemini Live single-agent free-talk (full duplex) implemented via subagent execution of [[01 — Architecture/Master Plan — Live Voice (Subagent-Ready)]].
@@ -39,7 +40,10 @@ move finished items into the day's [[06 — Logs/Daily Logs/|Daily Log]].
 - [x] **Phase 5 — Markdown export** (`/api/conversations/{id}/export?format=md`).
 - [x] Phase 5 — Conversation search (`/api/conversations/search`, snippet + match count) — DONE.
 - [x] Phase 5 — Analytics (`/api/analytics`, totals + per-persona + spoken-time estimate) — DONE.
-- [ ] Voice L2 — **P-5 persistence**: panel session/turn persistence + integration tests (needs a small schema decision).
+- [x] Voice L2 — **P-5 persistence**: saved `panels` + `panel_messages` transcript (models/panel.py, panel/persistence.py, /api/panels, panels_hub) — DONE.
+- [x] **Live/panel session resumption** on transient upstream drops (1006/1008/GoAway) — DONE (`recoverable_disconnect`, reconnect loops, `test_live_reconnect`/`test_panel_reconnect`).
+- [x] **Image/asset visual context**: per-persona/panel image uploads primed into Live sessions + screen-share/capture (models/asset.py, services/assets.py, live.js) — DONE.
+- [x] **MCP tool bridge** (optional, off by default): expose an MCP server's tools (e.g. Google Sheets) to the Live agent (services/mcp/client.py, `MCP_SHEETS_*`) — DONE.
 
 ## 🧵 Active Conversations
 - [[06 — Logs/Conversations/Conv-2026-06-25-Phase5-Build-Loop|Phase 5 Build Loop]] (export, Voice L2 panel, search)

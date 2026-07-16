@@ -20,7 +20,7 @@ This Obsidian vault is the **coding agent's cross-session memory** for the **AI 
 
 | Section | Purpose | Primary Docs & Entries |
 |---|---|---|
-| **01 — Architecture** | System design, Stack decisions, Request lifecycle | [[01 — Architecture/Architecture Overview]] · [[01 — Architecture/System Walkthrough\|System Walkthrough]] · [[01 — Architecture/Database Schema and Migrations\|Database Schema & Migrations]] |
+| **01 — Architecture** | System design, Stack decisions, Request lifecycle | **[[01 — Architecture/End-to-End System Architecture\|⭐ End-to-End System Architecture]]** (the current, code-verified full map) · [[01 — Architecture/Architecture Overview]] · [[01 — Architecture/System Walkthrough\|System Walkthrough]] · [[01 — Architecture/Database Schema and Migrations\|Database Schema & Migrations]] |
 | **02 — Backend** | FastAPI app, Database schemas, REST + WebSocket | [[02 — Backend/Backend Overview]] |
 | **03 — Memory Layer** | Short-term window, Rolling summaries, Semantic RAG | [[03 — Memory Layer/Memory Layer Overview]] · [[03 — Memory Layer/How RAG and Persistent Memory Work\|How RAG & Memory Work]] |
 | **04 — Personas** | System-prompt template, Built-in + Custom catalogs | [[04 — Personas/Persona Catalog]] |
@@ -30,8 +30,8 @@ This Obsidian vault is the **coding agent's cross-session memory** for the **AI 
 
 ---
 
-## 🚦 Current Status
+## 🚦 Current Status (2026-07-13)
 - **Phases 0–4 shipped**: Persona CRUD → Text streaming chat → Memory Layer & RAG → Voice (V1 + **Live L1**).
-- **Memory layer** fully implemented; backends migrated to local **Ollama** (`nomic-embed-text` + `qwen3:8b`).
-- **Phase 5 (current)**: ✅ Markdown export · ✅ **Voice L2 host-led multi-agent panel** (`/panel`, working) · ⏳ search · ⏳ analytics.
-- **Next**: finish search/analytics + panel persistence (P-5). See [[06 — Logs/Current Context]].
+- **Memory layer** fully implemented on local **Ollama** (`nomic-embed-text` + `qwen3:8b`).
+- **Phase 5 done**: ✅ Markdown export · ✅ conversation search · ✅ analytics · ✅ **Voice L2 host-led panel** with **persistence** (saved panels + transcript).
+- **Since the vault was last synced** (new subsystems now in code): **session resumption/reconnect** for Live + panel; **image/asset** visual context + screen-share; optional **MCP tool bridge** (Google Sheets). Full detail: **[[01 — Architecture/End-to-End System Architecture]]**.

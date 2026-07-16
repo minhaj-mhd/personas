@@ -7,6 +7,12 @@ updated: 2026-06-25
 
 # ⚙️ Backend Overview
 
+> 📍 For the complete current picture (all 9 routers, all services, every flow, the data model,
+> and the model stack), see **[[01 — Architecture/End-to-End System Architecture]]**. This note
+> covers the core layers; a few subsystems added since it was last synced —
+> **panels/assets APIs, the MCP tool bridge, image/asset visual context, and Live session
+> resumption** — are documented in full in the end-to-end doc.
+
 The backend is built as an asynchronous FastAPI application, combining relational data management, background task workers, vector retrieval logic, and WebSocket communication in a single container.
 
 ---
@@ -59,7 +65,8 @@ app/
 - Conversation creation, history lists, delete.
 - `POST /{id}/summarize`: Manual trigger → `SummarizerService.maybe_summarize(force=True)`.
 - `GET /{id}/export?format=md`: Downloads the transcript as Markdown (`services/export.py`).
-- `GET /search?q=&persona_id=`: Full-text search across messages with snippets (`services/search.py`). *(in progress)*
+- `GET /search?q=&persona_id=`: Full-text (ILIKE) search across messages with snippets (`services/search.py`). ✅
+- *(Panels + Assets routers added since — see [[01 — Architecture/End-to-End System Architecture#4. HTTP surface (REST + pages)]].)*
 
 ### 3. Text Dialogue WebSocket ([voice_ws.py](file:///c:/Users/loq/Desktop/learn/personas/app/api/voice_ws.py))
 - `/ws/chat/{conversation_id}`. Streams tokens, injects RAG/memory, cancels on interrupt, schedules summarization.
@@ -100,8 +107,11 @@ app/
 ### 6. Live & Panel Services ([gemini_live.py](file:///c:/Users/loq/Desktop/learn/personas/app/services/gemini_live.py), [panel/](file:///c:/Users/loq/Desktop/learn/personas/app/services/panel/))
 - `gemini_live.py`: builds the Live config — voice resolution, `recall_memory` + `route_to_agent` tools,
   language pin (`LIVE_LANGUAGE`), transcription, session resumption, sliding-window compression.
-- `panel/router.py` + `panel/session.py`: the **testable panel brain** (floor routing, roster state, shared
-  transcript, `build_agent_priming`). 17 unit tests cover it. Uses **LangGraph** (dependency) conceptually for orchestration.
+- `panel/router.py` + `panel/session.py` + `panel/persistence.py`: the **testable panel brain** (floor routing, roster state, shared
+  transcript, `build_agent_priming`, DB transcript write-back).
+  > ⚠️ **Not LangGraph.** Despite earlier notes, no graph runtime is used. Floor control is a
+  > deterministic first-name **router** (`detect_route`) plus a `route_to_agent` Gemini **function tool**;
+  > orchestration is plain asyncio in the WS loop. See [[01 — Architecture/End-to-End System Architecture#6. Orchestration — there is no LangGraph]].
 
 ---
 
