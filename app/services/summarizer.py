@@ -146,4 +146,7 @@ class SummarizerService:
                 )
             except Exception as e:
                 await session.rollback()
-                logger.error(f"Rolling summarization failed: {e}")
+                # logger.exception logs the full traceback + exception type even when
+                # str(e) is empty (e.g. an httpx/Ollama error with no message), which a
+                # bare f"...: {e}" would swallow into a blank line.
+                logger.exception(f"Rolling summarization failed: {e!r}")
