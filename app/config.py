@@ -62,13 +62,19 @@ class Settings(BaseSettings):
     # large backlog (e.g. a long-running Live session, or one where a prior attempt
     # failed and left messages unsummarized) gets stuffed into one request and reliably
     # times out — which then leaves the backlog even bigger for the next attempt.
-    # Measured on dev hardware: a 30-message batch (~6.1k prompt tokens) took ~114s
-    # against local qwen3:8b — right at the old 120s timeout with no margin. 15 keeps
-    # each call comfortably inside the timeout below.
-    SUMMARIZE_BATCH_SIZE: int = 15
+    # Measured on dev hardware against local qwen3:8b: a 30-message batch (~6.1k prompt
+    # tokens) took ~114s, and 15-message batches averaged ~138s and occasionally breached
+    # even a 180s timeout once the GPU had been under sustained load. 10 keeps each call
+    # well inside the timeout with headroom for that slowdown.
+    SUMMARIZE_BATCH_SIZE: int = 10
     # Per-call timeout (seconds) for the Ollama summarization request. Generous margin
     # over a batch's measured runtime so a momentarily busy GPU doesn't spuriously fail.
     SUMMARIZE_TIMEOUT: float = 180.0
+    # Extra attempts (with exponential backoff) for a batch before giving up. A single
+    # transient timeout shouldn't abandon the rest of the backlog — only a batch that
+    # fails every attempt halts the drain (and the next session resumes from the
+    # watermark anyway).
+    SUMMARIZE_MAX_RETRIES: int = 2
     RETRIEVE_TOP_K: int = 5
 
     # Voice configuration

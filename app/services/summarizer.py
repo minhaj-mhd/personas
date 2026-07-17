@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -68,10 +69,23 @@ class SummarizerService:
                 return
 
         batch_size = settings.SUMMARIZE_BATCH_SIZE
+        max_retries = settings.SUMMARIZE_MAX_RETRIES
         offset = 0
         while offset < len(unsummarized):
             batch = unsummarized[offset : offset + batch_size]
-            if not await self._summarize_batch(conversation_id, batch):
+            for attempt in range(max_retries + 1):
+                if await self._summarize_batch(conversation_id, batch):
+                    break
+                if attempt < max_retries:
+                    await asyncio.sleep(2**attempt)  # backoff before retrying the batch
+            else:
+                # Every attempt on this batch failed — stop rather than spin. The watermark
+                # holds at the last successful batch, so a later run resumes from here.
+                logger.error(
+                    f"Summarization halted for {conversation_id}: a batch failed "
+                    f"{max_retries + 1} attempts; {len(unsummarized) - offset} messages "
+                    f"remain unsummarized."
+                )
                 break
             offset += len(batch)
 

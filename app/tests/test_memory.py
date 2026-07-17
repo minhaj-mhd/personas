@@ -181,10 +181,12 @@ async def test_rolling_summarization_and_facts_extraction(db_session):
         await clean_database(db_session)
 
 
-def _make_counting_post(fail_on_chat_call: int | None = None):
+def _make_counting_post(fail_on_chat_calls: set[int] | None = None):
     """Returns an httpx.AsyncClient.post mock that serves valid summary/embed responses
-    and (optionally) raises an empty-message ReadTimeout on the Nth /api/chat call — the
-    exact failure that stalled real summarization. Exposes a mutable call counter."""
+    and raises an empty-message ReadTimeout on the given (1-indexed) /api/chat call
+    numbers — the exact failure that stalled real summarization. Exposes a mutable call
+    counter."""
+    fail_on = fail_on_chat_calls or set()
     state = {"chat_calls": 0}
 
     async def _post(self, url, json=None, **kwargs):
@@ -194,7 +196,7 @@ def _make_counting_post(fail_on_chat_call: int | None = None):
             return MockHttpxResponse({"embeddings": [[0.01] * 768 for _ in inputs]})
         if "/api/chat" in url_str:
             state["chat_calls"] += 1
-            if fail_on_chat_call is not None and state["chat_calls"] == fail_on_chat_call:
+            if state["chat_calls"] in fail_on:
                 raise httpx.ReadTimeout("")
             return MockHttpxResponse(
                 {"message": {"content": '{"summary": "S", "facts": ["F"]}'}}
@@ -250,20 +252,21 @@ async def test_summarization_drains_backlog_in_batches(db_session):
 
 
 @pytest.mark.asyncio
-async def test_summarization_progress_survives_partial_failure(db_session):
-    """If a later batch fails, the watermark and memories from earlier committed batches
-    survive — so the backlog shrinks instead of being retried whole every time (the bug
-    that let a 362-message backlog build up and time out forever)."""
+async def test_summarization_progress_survives_permanent_failure(db_session):
+    """If a batch fails every attempt, the watermark and memories from earlier committed
+    batches survive — so the backlog shrinks instead of being retried whole every time
+    (the bug that let a 362-message backlog build up and time out forever)."""
     try:
         conv, msgs = await _seed_conversation(db_session, 6)
-        # Fail on the 2nd chat call: batch 1 (msgs 0-1) commits, batch 2 aborts.
-        post, state = _make_counting_post(fail_on_chat_call=2)
-        with patch.object(settings, "SUMMARIZE_BATCH_SIZE", 2), patch(
-            "app.services.summarizer.httpx.AsyncClient.post", post
-        ):
+        # batch 1 (msgs 0-1) = chat call 1 (ok); batch 2 = calls 2 (attempt) + 3 (retry),
+        # both fail, so batch 2 is abandoned and the drain halts.
+        post, state = _make_counting_post(fail_on_chat_calls={2, 3})
+        with patch.object(settings, "SUMMARIZE_BATCH_SIZE", 2), patch.object(
+            settings, "SUMMARIZE_MAX_RETRIES", 1
+        ), patch("app.services.summarizer.httpx.AsyncClient.post", post):
             await SummarizerService().maybe_summarize(conv.id, force=True)
 
-        assert state["chat_calls"] == 2  # stopped after the failing batch, didn't push on
+        assert state["chat_calls"] == 3  # batch 2 tried twice, then gave up (no batch 3)
         summaries = (
             await db_session.execute(
                 select(Memory)
@@ -275,6 +278,27 @@ async def test_summarization_progress_survives_partial_failure(db_session):
         # Watermark advanced to the end of the successful batch, not rolled back to start.
         await db_session.refresh(conv)
         assert conv.last_summarized_message_id == msgs[1].id
+    finally:
+        await clean_database(db_session)
+
+
+@pytest.mark.asyncio
+async def test_summarization_retries_transient_failure(db_session):
+    """A batch that fails once (a transient timeout) is retried, and on success the drain
+    continues to completion instead of abandoning the rest of the backlog."""
+    try:
+        conv, msgs = await _seed_conversation(db_session, 4)
+        # Fail only the first chat call; its retry (call 2) succeeds, then batch 2 (call 3).
+        post, state = _make_counting_post(fail_on_chat_calls={1})
+        with patch.object(settings, "SUMMARIZE_BATCH_SIZE", 2), patch.object(
+            settings, "SUMMARIZE_MAX_RETRIES", 1
+        ), patch("app.services.summarizer.httpx.AsyncClient.post", post):
+            await SummarizerService().maybe_summarize(conv.id, force=True)
+
+        assert state["chat_calls"] == 3  # batch1: fail + retry-ok; batch2: ok
+        # Full drain despite the transient failure.
+        await db_session.refresh(conv)
+        assert conv.last_summarized_message_id == msgs[-1].id
     finally:
         await clean_database(db_session)
 
